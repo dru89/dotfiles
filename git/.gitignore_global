@@ -1,17 +1,3 @@
-# The usual things to ignore
-eclipse-bin
 tags
-.classpath
-.project
-.settings
-
-# Some things that I don't want to check into work repos
-# Not everyone uses ag
-.agignore
-# Not everyone uses overcommit
-.overcommit.yml
-# I copy the coffeelint file here so my editor sees it
-/coffeelint.json
-
-# vscode workspaces
+.DS_Store
 *.code-workspace

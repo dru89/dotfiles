@@ -1,181 +1,145 @@
 #!/usr/bin/env sh
 
-alias randstr="cat /dev/urandom | env LC_ALL=C tr -cd 'A-Za-z0-9' | head -c"
-alias randhex="cat /dev/urandom | env LC_ALL=C tr -cd 'a-f0-9' | head -c"
+randstr() { LC_ALL=C tr -cd 'A-Za-z0-9' < /dev/urandom | head -c "${1:-32}"; echo; }
+randhex() { LC_ALL=C tr -cd 'a-f0-9' < /dev/urandom | head -c "${1:-32}"; echo; }
 alias tiga='tig --all'
-alias arc='OVERCOMMIT_DISABLE=1 arc'
-alias q='ag -Q'
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 alias .....='cd ../../../..'
 alias sudo="sudo "
-alias workoff="deactivate" # opposite of virtualenv's "workon <env>"
+alias marked='open -a "Marked 2"'
 
-command -v hub > /dev/null && eval "$(hub alias -s)"
-
-function cdws() {
-cd $HOME/workspace/$1
-}
-
-function mkws() {
-mkdir -p $HOME/workspace/$1
-}
-
-# TODO: Autocompletion in bash?
-command -v compctl > /dev/null && compctl -/ -W $HOME/workspace cdws
-command -v compctl > /dev/null && compctl -/ -W $HOME/workspace mkws
-
-# Serve an HTTP server from the current directory
+# Serve a directory over HTTP. Defaults to current directory on port 3000.
 function serve() {
-dir="${1:-.}"
-port="${2:-3000}"
-ruby -run -e httpd $dir -p $port
+    local dir="${1:-.}"
+    local port="${2:-3000}"
+    python3 -m http.server --directory "$dir" "$port"
 }
 
 function jql() {
-arg="${1:-.}"
-jq -C "$arg" | less -r
+    local arg="${1:-.}"
+    jq -C "$arg" | less -r
 }
 
 function showcert() {
-domain="${1}"
-if [[ "${domain}" != *":"* ]]; then
-  domain="${domain}:443"
-fi
-openssl s_client -connect "${domain}" </dev/null 2>/dev/null | openssl x509 -noout -text
+    local domain="${1}"
+    if [[ "${domain}" != *":"* ]]; then
+        domain="${domain}:443"
+    fi
+    openssl s_client -connect "${domain}" </dev/null 2>/dev/null | openssl x509 -noout -text
 }
 
-# Add this to your .bashrc or .zshrc file
 clone() {
-    # Check if a URL was provided
-    if [ $# -lt 1 ]; then
-        echo "Usage: clone <git-repository-url>"
+    # NOTE: flags must come before the URL (e.g. clone --bare <url>), not after.
+    # git itself accepts flags in any position, but our parsing doesn't.
+    local url="${@: -1}"            # URL is always the last argument; git clone flags and their values come before it
+    local extra_args=("${@:1:$#-1}")  # everything before the URL is passed through to git clone as-is
+    local base_dir=~/Developer
+
+    if [[ -z "$url" ]]; then
+        echo "Usage: clone [git-clone-options] <repository-url>" >&2
         return 1
     fi
 
-    # Get the repository URL
-    REPO_URL="$1"
-
-    # Base directory for repositories
-    BASE_DIR=~/Developer
-
-    # Function to extract the target directory from the URL
-    get_target_dir() {
-        local url="$1"
-        local target_dir
-
-        # Remove .git extension if present
-        url=${url%.git}
-
-        # Handle SSH URLs (git@github.com:org/repo)
-        if [[ $url == git@* ]]; then
-            # Convert git@github.com:org/repo to github.com/org/repo
-            local domain=$(echo $url | cut -d '@' -f2 | cut -d ':' -f1)
-            local path=$(echo $url | cut -d ':' -f2)
-            target_dir="$BASE_DIR/$domain/$(dirname $path)/$(basename $path)"
-        else
-            # Handle HTTPS URLs (https://github.com/org/repo)
-            # Remove protocol prefix
-            local url_without_protocol=${url#*://}
-            target_dir="$BASE_DIR/$url_without_protocol"
-        fi
-
-        echo "$target_dir"
-    }
-
-    # Get the target directory
-    TARGET_DIR=$(get_target_dir "$REPO_URL")
-    REPO_NAME=$(basename "$TARGET_DIR")
-    PARENT_DIR=$(dirname "$TARGET_DIR")
-
-    echo "Cloning $REPO_URL to $TARGET_DIR"
-
-    # Create parent directory if it doesn't exist
-    mkdir -p "$PARENT_DIR"
-
-    # Clone the repository
-    git clone "$REPO_URL" "$TARGET_DIR"
-
-    # Check if the clone was successful
-    if [ $? -eq 0 ]; then
-        echo "Clone successful!"
-        # Change to the repository directory
-        cd "$TARGET_DIR"
+    # Derive the target path under ~/Developer from the URL.
+    # Strips .git suffix, handles SSH (git@host:org/repo),
+    # ssh:// (ssh://git@host:port/org/repo), and HTTPS forms.
+    local norm="${url%.git}"
+    local target_dir
+    if [[ "$norm" == git@* ]]; then
+        # git@github.com:org/repo -> github.com/org/repo
+        local domain="${norm#git@}"
+        domain="${domain%%:*}"
+        local path="${norm#*:}"
+        target_dir="$base_dir/$domain/$path"
+    elif [[ "$norm" == ssh://* ]]; then
+        # ssh://git@host:port/org/repo -> host/org/repo (drop user and port)
+        local no_proto="${norm#ssh://}"
+        no_proto="${no_proto#*@}"         # strip optional user@
+        local host="${no_proto%%/*}"
+        host="${host%%:*}"               # strip optional :port
+        local path="${no_proto#*/}"
+        target_dir="$base_dir/$host/$path"
     else
-        echo "Clone failed!"
-        return 1
+        # HTTPS or any other protocol: strip scheme and use path as-is
+        target_dir="$base_dir/${norm#*://}"
     fi
-}
 
-###################################################################
-#                         SSH-AGENT STUFF                         #
-# (found and slightly adapted from http://superuser.com/a/141241) #
-###################################################################
-function sshagent_findsockets() {
-find /tmp /var/folders -uid $(id -u) -type s -name agent.\* 2> /dev/null
-}
-
-function sshagent_testsocket {
-if ! command -v ssh-add > /dev/null; then
-    echo "ssh-add is not available; agent testing aborted"
-    return 1
-fi
-
-if [ -n "$1" ]; then
-    export SSH_AUTH_SOCK=$1
-fi
-
-if [ -z "$SSH_AUTH_SOCK" ]; then
-    return 2
-fi
-
-if [ -S $SSH_AUTH_SOCK ]; then
-    ssh-add -l > /dev/null 2> /dev/null
-    if [ $? = 2 ]; then
-        echo "Socket $SSH_AUTH_SOCK is dead! Deleting!"
-        rm -f $SSH_AUTH_SOCK
-        return 4
-    else
-        echo "Found ssh-agent $SSH_AUTH_SOCK"
+    if [[ -d "$target_dir" ]]; then
+        echo "Already exists: $target_dir" >&2
+        cd "$target_dir"
         return 0
     fi
-else
-    echo "$SSH_AUTH_SOCK is not a socket!"
-    return 3
-fi
+
+    echo "Cloning $url -> $target_dir"
+    mkdir -p "$(dirname "$target_dir")"
+
+    if git clone "${extra_args[@]}" "$url" "$target_dir"; then
+        cd "$target_dir"
+    else
+        return 1
+    fi
 }
 
-function sshagent_init {
-# ssh agent sockets can be attached to a ssh daemon process or an
-# ssh-agent process
-AGENTFOUND=0
+# Jump to a git repo under a given root directory using fzf.
+_cdfzf() {
+    local root="$1"
+    local prompt="${2:-Select repo: }"
+    local repo_dir
+    repo_dir=$(find "$root" -maxdepth 4 \
+        \( -name "node_modules" -o \
+           -name ".venv" -o \
+           -name "venv" -o \
+           -name "__pycache__" -o \
+           -name ".tox" -o \
+           -name "vendor" -o \
+           -name "target" -o \
+           -name "build" -o \
+           -name "dist" -o \
+           -name ".next" -o \
+           -name ".cache" \) -type d -prune -o \
+        -name ".git" -type d -exec dirname {} \; -prune 2>/dev/null | \
+        sed "s|^$root/||" | \
+        fzf --height 40% --reverse --border --prompt="$prompt")
 
-# Attempt to find and use the ssh-agent in the current environment
-if sshagent_testsocket; then AGENTFOUND=1; fi
+    if [[ -n "$repo_dir" ]]; then
+        cd "$root/$repo_dir"
+    fi
+}
 
-# if there is no agent in the environment, search /tmp for possible
-# agents to reuse before starting a fresh ssh-agent process
-if [ $AGENTFOUND = 0 ]; then
-    for agentsocket in $(sshagent_findsockets); do
-        if [ $AGENTFOUND != 0 ]; then break; fi
-        if sshagent_testsocket $agentsocket; then AGENTFOUND=1; fi
+function cdw() { _cdfzf ~/Writing "Writing: "; }
+function cdr() { _cdfzf ~/Developer "Repo: "; }
+
+# Search up the directory tree for a file matching a pattern.
+# Returns the full path to the first match.
+findup() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: findup <pattern>" >&2
+        return 1
+    fi
+    local pattern="$1"
+    local dir="$(pwd)"
+    while true; do
+        local match
+        match=$(find "$dir" -maxdepth 1 -name "$pattern" -print -quit 2>/dev/null)
+        if [[ -n "$match" ]]; then
+            echo "$match"
+            return 0
+        fi
+        [[ "$dir" == "/" ]] && { echo "No match found for '$pattern'" >&2; return 1; }
+        dir=$(dirname "$dir")
     done
-fi
-
-# if at this point, we still haven't located an agent, it's time to
-# start a new one
-if [ $AGENTFOUND = 0 ]; then
-    eval "$(ssh-agent -s)"
-fi
-
-# Clean up
-unset AGENTFOUND
-unset agentsocket
-
-# Finally, show what keys are currently in the agent
-ssh-add -l
 }
 
-alias sagent="sshagent_init"
+# cd to the directory containing the first file matching a pattern,
+# searching upward from the current directory.
+cdup() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: cdup <pattern>" >&2
+        return 1
+    fi
+    local match
+    match=$(findup "$1") && cd "$(dirname "$match")"
+}
 

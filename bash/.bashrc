@@ -1,14 +1,15 @@
-# ~/.bashrc: executed by bash(1) for non-login shells.
-# see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
-# for examples
+# ~/.bashrc
 
-export PATH="${HOME}/bin:${HOME}/.local/bin:/opt/homebrew/bin/:${PATH}"
+export PATH="${HOME}/bin:${HOME}/.local/bin:/opt/homebrew/bin:${PATH}"
 
 # If not running interactively, don't do anything
 case $- in
     *i*) ;;
       *) return;;
 esac
+
+# Disable Ctrl-s/Ctrl-q flow control (XOFF/XON) — frees up Ctrl-s
+stty -ixon 2>/dev/null
 
 # don't put duplicate lines or lines starting with space in the history.
 # See bash(1) for more options
@@ -29,87 +30,12 @@ shopt -s checkwinsize
 # match all files and zero or more directories and subdirectories.
 # shopt -s globstar
 
-# make less more friendly for non-text input files, see lesspipe(1)
-[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
-
-# set variable identifying the chroot you work in (used in the prompt below)
-if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
-    debian_chroot=$(cat /etc/debian_chroot)
-fi
-
-# set a fancy prompt (non-color, unless we know we "want" color)
-case "$TERM" in
-    xterm-color|*-256color|alacritty) color_prompt=yes;;
-esac
-
-# uncomment for a colored prompt, if the terminal has the capability; turned
-# off by default to not distract the user: the focus in a terminal window
-# should be on the output of commands, not on the prompt
-#force_color_prompt=yes
-
-if [ -n "$force_color_prompt" ]; then
-    if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
-  # We have color support; assume it's compliant with Ecma-48
-  # (ISO/IEC-6429). (Lack of such support is extremely rare, and such
-  # a case would tend to support setf rather than setaf.)
-  color_prompt=yes
-    else
-  color_prompt=
-    fi
-fi
-
-
-# enable color support of ls and also add handy aliases
-if [ -x /usr/bin/dircolors ]; then
-    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
-    alias ls='ls --color=auto'
-    #alias dir='dir --color=auto'
-    #alias vdir='vdir --color=auto'
-
-    alias grep='grep --color=auto'
-    alias fgrep='fgrep --color=auto'
-    alias egrep='egrep --color=auto'
-else
-    export CLICOLOR=YES
-fi
-
-# colored GCC warnings and errors
-#export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
-
-# Add an "alert" alias for long running commands.  Use like so:
-#   sleep 10; alert
-#alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
-
-# Alias definitions.
-# You may want to put all your additions into a separate file like
-# ~/.bash_aliases, instead of adding them here directly.
-# See /usr/share/doc/bash-doc/examples in the bash-doc package.
-
-if [ -f ~/.bash_aliases ]; then
-    source ~/.bash_aliases
-fi
-
-if [ -x /usr/local/bin/virtualenvwrapper.sh ]; then
-  VIRTUALENVWRAPPER_PYTHON=/usr/local/bin/python3
-  export WORKON_HOME=$HOME/.virtualenvs
-  export PROJECT_HOME=$HOME/workspace
-  source /usr/local/bin/virtualenvwrapper.sh
-fi
-
+# enable color support of ls on macOS
+export CLICOLOR=YES
 # enable programmable completion features (you don't need to enable
 # this, if it's already enabled in /etc/bash.bashrc and /etc/profile
 # sources /etc/bash.bashrc).
-export BASH_COMPLETION_COMPAT_DIR="/usr/local/etc/bash_completion.d"
-[ -f $(brew --prefix)/etc/profile.d/bash_completion.sh ] && source $(brew --prefix)/etc/profile.d/bash_completion.sh
-
-
-
-# conditional scripts
-if [ -f ~/.fzf.bash ]; then
-    export FZF_DEFAULT_COMMAND='find -L .'
-    source ~/.fzf.bash
-fi
-
+[ -f "$(brew --prefix)/etc/profile.d/bash_completion.sh" ] && source "$(brew --prefix)/etc/profile.d/bash_completion.sh"
 eval "$(fzf --bash)"
 
 if [ -f ~/.config/ripgrep/.rgrc ]; then
@@ -117,16 +43,20 @@ if [ -f ~/.config/ripgrep/.rgrc ]; then
 fi
 
 [ -f ~/.env.local ] && source ~/.env.local
-[ -f ~/.shellrc ] && source ~/.shellrc
-[[ -r "/usr/local/etc/profile.d/bash_completion.sh" ]] && source "/usr/local/etc/profile.d/bash_completion.sh"
 
-command -v rbenv > /dev/null && eval "$(rbenv init - bash)"
+export EDITOR=nvim
+
+[ -f ~/.aliases ] && source ~/.aliases
+test -f ~/.localshell && source ~/.localshell
+
+# go binaries
+command -v go > /dev/null && export PATH="$PATH:$(go env GOPATH)/bin"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
 
 eval "$(starship init bash)"
-
-export PATH="/usr/local/sbin:$PATH"
-export PATH="$HOME/.local/bin:$PATH"
-export JAVA_HOME=$(/usr/libexec/java_home)
 
 # nvm
 export NVM_DIR="$HOME/.nvm"
@@ -145,3 +75,12 @@ esac
 . "$HOME/.atuin/bin/env"
 [[ -f ~/.bash-preexec.sh ]] && source ~/.bash-preexec.sh
 eval "$(atuin init bash)"
+
+# opencode
+export PATH=/Users/drew.hays/.opencode/bin:$PATH
+
+# Added by LM Studio CLI (lms)
+export PATH="$PATH:/Users/drew.hays/.lmstudio/bin"
+# End of LM Studio CLI section
+
+. "$HOME/.cargo/env"

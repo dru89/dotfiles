@@ -46,15 +46,6 @@
     algorithm = patience
     tool = vimdiff
     colorMoved = default
-[url "git://github.com/"]
-    insteadOf = "gh:"
-[url "git@github.com:"]
-    pushInsteadOf = "git://github.com"
-
-[filter "media"]
-    required = true
-    clean = git media clean %f
-    smudge = git media smudge %f
 [difftool]
     prompt = false
 [mergetool]
@@ -72,3 +63,9 @@
     path = ~/.local_gitconfig
 [interactive]
     diffFilter = delta --color-only
+[credential "https://github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
