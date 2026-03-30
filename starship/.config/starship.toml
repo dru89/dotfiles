@@ -3,7 +3,7 @@
 # ------------------------------------------------------------------
 
 # Bash blocks on slow commands — fail fast instead of hanging
-command_timeout = 300
+command_timeout = 500
 
 # Keep prompt compact and readable
 add_newline = true

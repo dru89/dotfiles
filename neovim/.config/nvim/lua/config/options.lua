@@ -3,6 +3,22 @@
 
 local opt = vim.opt
 
+-- ==================== NVM NODE PATH =========================
+-- Ensure nvm-managed Node is available for LSP servers
+-- (nvm isn't initialized in non-interactive shells that Neovim spawns)
+local function setup_nvm_node_path()
+  local handle = io.popen("bash -c 'source ~/.nvm/nvm.sh && dirname $(nvm which default)' 2>/dev/null")
+  if handle then
+    local result = handle:read("*a"):gsub("%s+$", "")
+    handle:close()
+    if result ~= "" and vim.fn.isdirectory(result) == 1 then
+      vim.env.PATH = result .. ":" .. vim.env.PATH
+    end
+  end
+end
+
+setup_nvm_node_path()
+
 -- General settings
 opt.autoread = true                 -- Automatically reload a file when it's changed
 opt.backspace = "indent,eol,start"  -- Make backspace work normally in insert mode
@@ -51,9 +67,9 @@ vim.fn.mkdir(undodir, "p")
 opt.autoindent = true
 opt.smartindent = true
 opt.smarttab = true
-opt.shiftwidth = 4
-opt.softtabstop = 4
-opt.tabstop = 4
+opt.shiftwidth = 2
+opt.softtabstop = 2
+opt.tabstop = 2
 opt.expandtab = true
 
 -- Display tabs and trailing spaces visually
