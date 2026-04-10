@@ -187,6 +187,239 @@ clone() {
     fi
 }
 
+# Reorganize git repos under ~/Developer so each repo's filesystem path
+# matches its origin remote (host/org/repo). Handles repos with no remotes,
+# multiple remotes, and renames.
+#
+# Usage:
+#   reorg            Dry-run: show what would move, prompt for ambiguous cases
+#   reorg --apply    Actually move repos after confirmation
+reorg() {
+    local base_dir=~/Developer
+    local apply=false
+    if [[ "$1" == "--apply" ]]; then
+        apply=true
+    fi
+
+    local moves=()       # "src|dst" pairs queued for moving
+    local skipped=()     # repos that were skipped (already correct, user declined, etc.)
+    local errors=()      # repos that couldn't be resolved
+
+    # Find all git repos under base_dir.
+    local repos=()
+    while IFS= read -r repo; do
+        repos+=("$repo")
+    done < <(find "$base_dir" -maxdepth 6 \
+        \( -name "node_modules" -o -name ".venv" -o -name "venv" -o \
+           -name "__pycache__" -o -name ".tox" -o -name "vendor" -o \
+           -name "target" -o -name "build" -o -name "dist" -o \
+           -name ".next" -o -name ".cache" \) -type d -prune -o \
+        -name ".git" -type d -exec dirname {} \; -prune 2>/dev/null | sort)
+
+    echo "Found ${#repos[@]} repos under $base_dir"
+    echo ""
+
+    for repo in "${repos[@]}"; do
+        local rel="${repo#$base_dir/}"
+
+        # Gather all fetch remotes: "name url" per line.
+        local remotes
+        remotes=$(git -C "$repo" remote -v 2>/dev/null | grep '(fetch)' | awk '{print $1, $2}')
+
+        # --- No remotes ---
+        if [[ -z "$remotes" ]]; then
+            local repo_name
+            repo_name=$(basename "$repo")
+            local local_target="$base_dir/local/$repo_name"
+            local local_rel="local/$repo_name"
+
+            # Already in the right place?
+            if [[ "$rel" == "local/$repo_name" ]]; then
+                skipped+=("$rel (already in local/)")
+                continue
+            fi
+
+            echo "No remotes: $rel"
+            if $apply; then
+                echo "  Move to $local_rel? [y/N/s(kip)] "
+                read -r answer </dev/tty
+                case "$answer" in
+                    y|Y) moves+=("$repo|$local_target") ;;
+                    *)   skipped+=("$rel (user skipped, no remotes)") ;;
+                esac
+            else
+                echo "  -> would move to: $local_rel"
+            fi
+            echo ""
+            continue
+        fi
+
+        # --- Single remote (typical case) ---
+        local remote_count
+        remote_count=$(echo "$remotes" | wc -l | tr -d ' ')
+
+        local chosen_url=""
+        if [[ "$remote_count" -eq 1 ]]; then
+            chosen_url=$(echo "$remotes" | awk '{print $2}')
+        else
+            # --- Multiple remotes ---
+            # Prefer origin if it exists; otherwise ask.
+            local origin_url
+            origin_url=$(echo "$remotes" | awk '$1 == "origin" {print $2}')
+            if [[ -n "$origin_url" ]]; then
+                chosen_url="$origin_url"
+            else
+                echo "Multiple remotes (no origin): $rel"
+                local i=1
+                local urls=()
+                while IFS= read -r line; do
+                    local rname rurl
+                    rname=$(echo "$line" | awk '{print $1}')
+                    rurl=$(echo "$line" | awk '{print $2}')
+                    urls+=("$rurl")
+                    local rhost rpath
+                    rhost=$(_clone_parse_host "$rurl")
+                    rpath=$(_clone_parse_path "$rurl")
+                    echo "  [$i] $rname -> $rhost/$rpath"
+                    (( i++ ))
+                done <<< "$remotes"
+                echo "  [s] skip"
+
+                if $apply; then
+                    echo "  Choose: "
+                    read -r choice </dev/tty
+                    if [[ "$choice" == "s" || -z "$choice" ]]; then
+                        skipped+=("$rel (user skipped, multiple remotes)")
+                        echo ""
+                        continue
+                    fi
+                    if [[ "$choice" -ge 1 && "$choice" -le ${#urls[@]} ]] 2>/dev/null; then
+                        chosen_url="${urls[$((choice - 1))]}"
+                    else
+                        echo "  Invalid choice, skipping."
+                        skipped+=("$rel (invalid choice)")
+                        echo ""
+                        continue
+                    fi
+                else
+                    echo "  -> would prompt for choice in --apply mode"
+                    # In dry-run, show all possible destinations.
+                    for url in "${urls[@]}"; do
+                        local dhost dpath
+                        dhost=$(_clone_parse_host "$url")
+                        dpath=$(_clone_parse_path "$url")
+                        echo "     possible: $dhost/$dpath"
+                    done
+                    echo ""
+                    continue
+                fi
+            fi
+        fi
+
+        # Derive the expected path from the chosen URL.
+        local exp_host exp_path exp_dir exp_rel
+        exp_host=$(_clone_parse_host "$chosen_url")
+        exp_path=$(_clone_parse_path "$chosen_url")
+        exp_dir="$base_dir/$exp_host/$exp_path"
+        exp_rel="$exp_host/$exp_path"
+
+        # Case-insensitive comparison.
+        local rel_lower exp_rel_lower
+        rel_lower=$(echo "$rel" | tr '[:upper:]' '[:lower:]')
+        exp_rel_lower=$(echo "$exp_rel" | tr '[:upper:]' '[:lower:]')
+
+        if [[ "$rel_lower" == "$exp_rel_lower" ]]; then
+            skipped+=("$rel (correct)")
+            continue
+        fi
+
+        # This repo needs to move.
+        if $apply; then
+            echo "Mismatch: $rel"
+            echo "  origin -> $exp_rel"
+            echo "  Move? [Y/n] "
+            read -r answer </dev/tty
+            case "$answer" in
+                n|N) skipped+=("$rel (user declined)") ;;
+                *)   moves+=("$repo|$exp_dir") ;;
+            esac
+        else
+            echo "Mismatch: $rel"
+            echo "  -> would move to: $exp_rel"
+        fi
+        echo ""
+    done
+
+    # --- Summary ---
+    echo "=============================="
+    if $apply; then
+        echo "APPLY MODE"
+    else
+        echo "DRY RUN (use reorg --apply to execute)"
+    fi
+    echo "=============================="
+    echo "${#moves[@]} repo(s) to move"
+    echo "${#skipped[@]} repo(s) already correct or skipped"
+    if [[ ${#errors[@]} -gt 0 ]]; then
+        echo "${#errors[@]} error(s)"
+        for e in "${errors[@]}"; do
+            echo "  ERROR: $e"
+        done
+    fi
+    echo ""
+
+    if $apply && [[ ${#moves[@]} -gt 0 ]]; then
+        echo "Moves to execute:"
+        for entry in "${moves[@]}"; do
+            local src="${entry%%|*}"
+            local dst="${entry##*|}"
+            echo "  $(echo "$src" | sed "s|^$base_dir/||") -> $(echo "$dst" | sed "s|^$base_dir/||")"
+        done
+        echo ""
+        echo "Proceed? [y/N] "
+        read -r confirm </dev/tty
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo "Aborted."
+            return 0
+        fi
+
+        local moved=0 failed=0
+        for entry in "${moves[@]}"; do
+            local src="${entry%%|*}"
+            local dst="${entry##*|}"
+            if [[ -e "$dst" ]]; then
+                echo "  CONFLICT: $dst already exists, skipping $src" >&2
+                (( failed++ ))
+                continue
+            fi
+            mkdir -p "$(dirname "$dst")"
+            if mv "$src" "$dst"; then
+                echo "  Moved: $(echo "$src" | sed "s|^$base_dir/||") -> $(echo "$dst" | sed "s|^$base_dir/||")"
+                (( moved++ ))
+                # Clean up empty parent directories left behind.
+                local parent
+                parent=$(dirname "$src")
+                while [[ "$parent" != "$base_dir" && "$parent" != "/" ]]; do
+                    rmdir "$parent" 2>/dev/null || break
+                    parent=$(dirname "$parent")
+                done
+            else
+                echo "  FAILED: could not move $src" >&2
+                (( failed++ ))
+            fi
+        done
+        echo ""
+        echo "Done: $moved moved, $failed failed."
+    elif ! $apply && [[ ${#moves[@]} -gt 0 ]]; then
+        echo "Repos that would move:"
+        for entry in "${moves[@]}"; do
+            local src="${entry%%|*}"
+            local dst="${entry##*|}"
+            echo "  $(echo "$src" | sed "s|^$base_dir/||") -> $(echo "$dst" | sed "s|^$base_dir/||")"
+        done
+    fi
+}
+
 # Jump to a git repo under a given root directory using fzf.
 _cdfzf() {
     local root="$1"
