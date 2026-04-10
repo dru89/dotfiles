@@ -84,3 +84,4 @@ export PATH="$PATH:/Users/drew.hays/.lmstudio/bin"
 # End of LM Studio CLI section
 
 . "$HOME/.cargo/env"
+command -v sesh &>/dev/null && eval "$(sesh init bash)"

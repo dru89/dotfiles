@@ -30,11 +30,110 @@ function showcert() {
     openssl s_client -connect "${domain}" </dev/null 2>/dev/null | openssl x509 -noout -text
 }
 
+# Internal: extract hostname from a git URL (SSH, ssh://, or HTTPS).
+_clone_parse_host() {
+    local norm="${1%.git}"
+    if [[ "$norm" == git@* ]]; then
+        local h="${norm#git@}"; echo "${h%%:*}"
+    elif [[ "$norm" == ssh://* ]]; then
+        local h="${norm#ssh://}"; h="${h#*@}"; h="${h%%/*}"; echo "${h%%:*}"
+    else
+        local h="${norm#*://}"; echo "${h%%/*}"
+    fi
+}
+
+# Internal: extract the path component (no host, no .git) from a git URL.
+_clone_parse_path() {
+    local norm="${1%.git}"
+    if [[ "$norm" == git@* ]]; then
+        echo "${norm#*:}"
+    elif [[ "$norm" == ssh://* ]]; then
+        local p="${norm#ssh://}"; p="${p#*@}"; echo "${p#*/}"
+    else
+        local p="${norm#*://}"; echo "${p#*/}"
+    fi
+}
+
+# Internal: clone a single URL to its derived path under base_dir. No cd.
+# Usage: _clone_one <url> <base_dir> [git-clone-flags...]
+_clone_one() {
+    local url="$1" base_dir="$2"
+    shift 2
+    local host path target_dir
+    host=$(_clone_parse_host "$url")
+    path=$(_clone_parse_path "$url")
+    target_dir="$base_dir/$host/$path"
+    if [[ -d "$target_dir" ]]; then
+        echo "Already exists: $target_dir" >&2
+        return 0
+    fi
+    echo "Cloning $url -> $target_dir"
+    mkdir -p "$(dirname "$target_dir")"
+    git clone "$@" "$url" "$target_dir"
+}
+
+# Internal: clone all repos in a GitHub org or user account.
+_clone_github_org() {
+    local host="$1" org="$2" base_dir="$3"
+    shift 3
+    if ! command -v gh &>/dev/null; then
+        echo "gh is required to clone a GitHub org but was not found" >&2
+        return 1
+    fi
+    local api_flags=()
+    [[ "$host" != "github.com" ]] && api_flags+=(--hostname "$host")
+    local page=1 found=0
+    while true; do
+        local urls
+        # Try org endpoint first; fall back to user endpoint.
+        urls=$(gh api "${api_flags[@]}" "orgs/$org/repos?per_page=100&page=$page" 2>/dev/null \
+            | jq -r '.[].clone_url // empty' 2>/dev/null)
+        if [[ -z "$urls" ]]; then
+            urls=$(gh api "${api_flags[@]}" "users/$org/repos?per_page=100&page=$page" 2>/dev/null \
+                | jq -r '.[].clone_url // empty' 2>/dev/null)
+        fi
+        [[ -z "$urls" ]] && break
+        while IFS= read -r repo_url; do
+            _clone_one "$repo_url" "$base_dir" "$@"
+            (( found++ ))
+        done <<< "$urls"
+        (( page++ ))
+    done
+    echo "Done: $found repos processed."
+    cd "$base_dir/$host/$org"
+}
+
+# Internal: clone all projects under a GitLab group (recursive into subgroups).
+_clone_gitlab_group() {
+    local host="$1" group="$2" base_dir="$3"
+    shift 3
+    if ! command -v glab &>/dev/null; then
+        echo "glab is required to clone a GitLab group but was not found" >&2
+        return 1
+    fi
+    local encoded="${group//\//%2F}"
+    local page=1 found=0
+    while true; do
+        local urls
+        urls=$(GITLAB_HOST="$host" glab api \
+            "groups/$encoded/projects?include_subgroups=true&per_page=100&archived=false&page=$page" \
+            2>/dev/null | jq -r '.[].http_url_to_repo // empty' 2>/dev/null)
+        [[ -z "$urls" ]] && break
+        while IFS= read -r repo_url; do
+            _clone_one "$repo_url" "$base_dir" "$@"
+            (( found++ ))
+        done <<< "$urls"
+        (( page++ ))
+    done
+    echo "Done: $found repos processed."
+    cd "$base_dir/$host/$group"
+}
+
 clone() {
     # NOTE: flags must come before the URL (e.g. clone --bare <url>), not after.
     # git itself accepts flags in any position, but our parsing doesn't.
-    local url="${@: -1}"            # URL is always the last argument; git clone flags and their values come before it
-    local extra_args=("${@:1:$#-1}")  # everything before the URL is passed through to git clone as-is
+    local url="${@: -1}"           # URL is always the last argument
+    local extra_args=("${@:1:$#-1}")  # everything before the URL passed through to git clone
     local base_dir=~/Developer
 
     if [[ -z "$url" ]]; then
@@ -42,39 +141,45 @@ clone() {
         return 1
     fi
 
-    # Derive the target path under ~/Developer from the URL.
-    # Strips .git suffix, handles SSH (git@host:org/repo),
-    # ssh:// (ssh://git@host:port/org/repo), and HTTPS forms.
-    local norm="${url%.git}"
-    local target_dir
-    if [[ "$norm" == git@* ]]; then
-        # git@github.com:org/repo -> github.com/org/repo
-        local domain="${norm#git@}"
-        domain="${domain%%:*}"
-        local path="${norm#*:}"
-        target_dir="$base_dir/$domain/$path"
-    elif [[ "$norm" == ssh://* ]]; then
-        # ssh://git@host:port/org/repo -> host/org/repo (drop user and port)
-        local no_proto="${norm#ssh://}"
-        no_proto="${no_proto#*@}"         # strip optional user@
-        local host="${no_proto%%/*}"
-        host="${host%%:*}"               # strip optional :port
-        local path="${no_proto#*/}"
-        target_dir="$base_dir/$host/$path"
-    else
-        # HTTPS or any other protocol: strip scheme and use path as-is
-        target_dir="$base_dir/${norm#*://}"
+    local host path
+    host=$(_clone_parse_host "$url")
+    path=$(_clone_parse_path "$url")
+
+    # GitHub: a single path segment means org or user — clone all repos.
+    if [[ "$host" == *github* ]]; then
+        local depth
+        depth=$(awk -F/ '{print NF}' <<< "$path")
+        if [[ "$depth" -eq 1 ]]; then
+            _clone_github_org "$host" "$path" "$base_dir" "${extra_args[@]}"
+            return
+        fi
+
+    # GitLab: query the projects API to distinguish a project from a group.
+    # A project response includes http_url_to_repo; a group path 404s on that endpoint.
+    elif [[ "$host" == *gitlab* ]]; then
+        if ! command -v glab &>/dev/null; then
+            echo "glab is required for GitLab URLs but was not found" >&2
+            return 1
+        fi
+        local encoded="${path//\//%2F}"
+        local project_url
+        project_url=$(GITLAB_HOST="$host" glab api "projects/$encoded" 2>/dev/null \
+            | jq -r '.http_url_to_repo // empty' 2>/dev/null)
+        if [[ -z "$project_url" ]]; then
+            _clone_gitlab_group "$host" "$path" "$base_dir" "${extra_args[@]}"
+            return
+        fi
     fi
 
+    # Direct single-repo clone.
+    local target_dir="$base_dir/$host/$path"
     if [[ -d "$target_dir" ]]; then
         echo "Already exists: $target_dir" >&2
         cd "$target_dir"
         return 0
     fi
-
     echo "Cloning $url -> $target_dir"
     mkdir -p "$(dirname "$target_dir")"
-
     if git clone "${extra_args[@]}" "$url" "$target_dir"; then
         cd "$target_dir"
     else
@@ -87,7 +192,7 @@ _cdfzf() {
     local root="$1"
     local prompt="${2:-Select repo: }"
     local repo_dir
-    repo_dir=$(find "$root" -maxdepth 4 \
+    repo_dir=$(find "$root" -maxdepth 6 \
         \( -name "node_modules" -o \
            -name ".venv" -o \
            -name "venv" -o \
