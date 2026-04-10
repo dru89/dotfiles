@@ -189,12 +189,17 @@ clone() {
 
 # Reorganize git repos under ~/Developer so each repo's filesystem path
 # matches its origin remote (host/org/repo). Handles repos with no remotes,
-# multiple remotes, and renames.
+# multiple remotes, and renames. Requires gum (brew install gum).
 #
 # Usage:
 #   reorg            Dry-run: show what would move, prompt for ambiguous cases
 #   reorg --apply    Actually move repos after confirmation
 reorg() {
+    if ! command -v gum &>/dev/null; then
+        echo "gum is required but was not found (brew install gum)" >&2
+        return 1
+    fi
+
     local base_dir=~/Developer
     local apply=false
     if [[ "$1" == "--apply" ]]; then
@@ -216,7 +221,7 @@ reorg() {
            -name ".next" -o -name ".cache" \) -type d -prune -o \
         -name ".git" -type d -exec dirname {} \; -prune 2>/dev/null | sort)
 
-    echo "Found ${#repos[@]} repos under $base_dir"
+    gum style --bold "Found ${#repos[@]} repos under $base_dir"
     echo ""
 
     for repo in "${repos[@]}"; do
@@ -239,14 +244,13 @@ reorg() {
                 continue
             fi
 
-            echo "No remotes: $rel"
+            gum style --foreground 214 "No remotes: $rel"
             if $apply; then
-                echo "  Move to $local_rel? [y/N/s(kip)] "
-                read -r answer </dev/tty
-                case "$answer" in
-                    y|Y) moves+=("$repo|$local_target") ;;
-                    *)   skipped+=("$rel (user skipped, no remotes)") ;;
-                esac
+                if gum confirm "Move to $local_rel?"; then
+                    moves+=("$repo|$local_target")
+                else
+                    skipped+=("$rel (user skipped, no remotes)")
+                fi
             else
                 echo "  -> would move to: $local_rel"
             fi
@@ -269,46 +273,40 @@ reorg() {
             if [[ -n "$origin_url" ]]; then
                 chosen_url="$origin_url"
             else
-                echo "Multiple remotes (no origin): $rel"
-                local i=1
+                gum style --foreground 214 "Multiple remotes (no origin): $rel"
+
+                # Build labels for gum choose: "remote_name -> host/path"
+                local labels=()
                 local urls=()
                 while IFS= read -r line; do
-                    local rname rurl
+                    local rname rurl rhost rpath
                     rname=$(echo "$line" | awk '{print $1}')
                     rurl=$(echo "$line" | awk '{print $2}')
                     urls+=("$rurl")
-                    local rhost rpath
                     rhost=$(_clone_parse_host "$rurl")
                     rpath=$(_clone_parse_path "$rurl")
-                    echo "  [$i] $rname -> $rhost/$rpath"
-                    (( i++ ))
+                    labels+=("$rname -> $rhost/$rpath")
                 done <<< "$remotes"
-                echo "  [s] skip"
 
                 if $apply; then
-                    echo "  Choose: "
-                    read -r choice </dev/tty
-                    if [[ "$choice" == "s" || -z "$choice" ]]; then
+                    local choice
+                    choice=$(printf '%s\n' "${labels[@]}" "Skip" \
+                        | gum choose --header "Pick the canonical remote:")
+                    if [[ "$choice" == "Skip" || -z "$choice" ]]; then
                         skipped+=("$rel (user skipped, multiple remotes)")
                         echo ""
                         continue
                     fi
-                    if [[ "$choice" -ge 1 && "$choice" -le ${#urls[@]} ]] 2>/dev/null; then
-                        chosen_url="${urls[$((choice - 1))]}"
-                    else
-                        echo "  Invalid choice, skipping."
-                        skipped+=("$rel (invalid choice)")
-                        echo ""
-                        continue
-                    fi
+                    # Find the index of the chosen label to get the URL.
+                    for i in "${!labels[@]}"; do
+                        if [[ "${labels[$i]}" == "$choice" ]]; then
+                            chosen_url="${urls[$i]}"
+                            break
+                        fi
+                    done
                 else
-                    echo "  -> would prompt for choice in --apply mode"
-                    # In dry-run, show all possible destinations.
-                    for url in "${urls[@]}"; do
-                        local dhost dpath
-                        dhost=$(_clone_parse_host "$url")
-                        dpath=$(_clone_parse_path "$url")
-                        echo "     possible: $dhost/$dpath"
+                    for label in "${labels[@]}"; do
+                        echo "  possible: $label"
                     done
                     echo ""
                     continue
@@ -335,50 +333,47 @@ reorg() {
 
         # This repo needs to move.
         if $apply; then
-            echo "Mismatch: $rel"
+            gum style --foreground 212 "Mismatch: $rel"
             echo "  origin -> $exp_rel"
-            echo "  Move? [Y/n] "
-            read -r answer </dev/tty
-            case "$answer" in
-                n|N) skipped+=("$rel (user declined)") ;;
-                *)   moves+=("$repo|$exp_dir") ;;
-            esac
+            if gum confirm "Move?"; then
+                moves+=("$repo|$exp_dir")
+            else
+                skipped+=("$rel (user declined)")
+            fi
         else
-            echo "Mismatch: $rel"
+            gum style --foreground 212 "Mismatch: $rel"
             echo "  -> would move to: $exp_rel"
         fi
         echo ""
     done
 
     # --- Summary ---
-    echo "=============================="
+    echo ""
     if $apply; then
-        echo "APPLY MODE"
+        gum style --bold --border double --padding "0 2" "APPLY MODE"
     else
-        echo "DRY RUN (use reorg --apply to execute)"
+        gum style --bold --border double --padding "0 2" "DRY RUN  (use reorg --apply to execute)"
     fi
-    echo "=============================="
+    echo ""
     echo "${#moves[@]} repo(s) to move"
     echo "${#skipped[@]} repo(s) already correct or skipped"
     if [[ ${#errors[@]} -gt 0 ]]; then
         echo "${#errors[@]} error(s)"
         for e in "${errors[@]}"; do
-            echo "  ERROR: $e"
+            gum style --foreground 196 "  ERROR: $e"
         done
     fi
     echo ""
 
     if $apply && [[ ${#moves[@]} -gt 0 ]]; then
-        echo "Moves to execute:"
+        gum style --bold "Moves to execute:"
         for entry in "${moves[@]}"; do
             local src="${entry%%|*}"
             local dst="${entry##*|}"
             echo "  $(echo "$src" | sed "s|^$base_dir/||") -> $(echo "$dst" | sed "s|^$base_dir/||")"
         done
         echo ""
-        echo "Proceed? [y/N] "
-        read -r confirm </dev/tty
-        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        if ! gum confirm "Proceed with all moves?"; then
             echo "Aborted."
             return 0
         fi
@@ -387,14 +382,17 @@ reorg() {
         for entry in "${moves[@]}"; do
             local src="${entry%%|*}"
             local dst="${entry##*|}"
+            local src_rel dst_rel
+            src_rel=$(echo "$src" | sed "s|^$base_dir/||")
+            dst_rel=$(echo "$dst" | sed "s|^$base_dir/||")
             if [[ -e "$dst" ]]; then
-                echo "  CONFLICT: $dst already exists, skipping $src" >&2
+                gum style --foreground 196 "  CONFLICT: $dst_rel already exists, skipping $src_rel"
                 (( failed++ ))
                 continue
             fi
             mkdir -p "$(dirname "$dst")"
             if mv "$src" "$dst"; then
-                echo "  Moved: $(echo "$src" | sed "s|^$base_dir/||") -> $(echo "$dst" | sed "s|^$base_dir/||")"
+                gum style --foreground 76 "  Moved: $src_rel -> $dst_rel"
                 (( moved++ ))
                 # Clean up empty parent directories left behind.
                 local parent
@@ -404,14 +402,14 @@ reorg() {
                     parent=$(dirname "$parent")
                 done
             else
-                echo "  FAILED: could not move $src" >&2
+                gum style --foreground 196 "  FAILED: could not move $src_rel"
                 (( failed++ ))
             fi
         done
         echo ""
-        echo "Done: $moved moved, $failed failed."
+        gum style --bold "Done: $moved moved, $failed failed."
     elif ! $apply && [[ ${#moves[@]} -gt 0 ]]; then
-        echo "Repos that would move:"
+        gum style --bold "Repos that would move:"
         for entry in "${moves[@]}"; do
             local src="${entry%%|*}"
             local dst="${entry##*|}"
