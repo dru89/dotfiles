@@ -1,5 +1,3 @@
-tap "homebrew/bundle"
-tap "homebrew/services"
 brew "bash"
 brew "bash-completion@2"
 brew "coreutils"
@@ -61,23 +59,9 @@ cask "font-lato"
 cask "font-roboto"
 cask "font-roboto-mono"
 
-mas "Bear", id: 1091189122
 mas "Cardhop", id: 1290358394
 mas "CARROT Weather", id: 993487541
-mas "Craft", id: 1487937127
-mas "Day One", id: 1055511498
 mas "Deliveries", id: 290986013
 mas "Drafts", id: 1435957248
 mas "Fantastical", id: 975937182
-mas "GarageBand", id: 682658836
-mas "GoodLinks", id: 1474335294
-mas "iMovie", id: 408981434
-mas "Keynote", id: 409183694
-mas "Moom", id: 419330170
-mas "Numbers", id: 409203825
-mas "OmniFocus", id: 1346203938
-mas "Pages", id: 409201541
 mas "Pastebot", id: 1179623856
-mas "Reeder", id: 1529448980
-mas "Things", id: 904280696
-mas "Xcode", id: 497799835
