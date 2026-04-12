@@ -134,7 +134,7 @@ clone() {
     # git itself accepts flags in any position, but our parsing doesn't.
     local url="${@: -1}"           # URL is always the last argument
     local extra_args=("${@:1:$#-1}")  # everything before the URL passed through to git clone
-    local base_dir=~/Developer
+    local base_dir="${DEVELOPER_DIR:-$HOME/Developer}"
 
     if [[ -z "$url" ]]; then
         echo "Usage: clone [git-clone-options] <repository-url>" >&2
@@ -200,7 +200,7 @@ reorg() {
         return 1
     fi
 
-    local base_dir=~/Developer
+    local base_dir="${DEVELOPER_DIR:-$HOME/Developer}"
     local apply=false
     if [[ "$1" == "--apply" ]]; then
         apply=true
@@ -445,7 +445,7 @@ _cdfzf() {
 }
 
 function cdw() { _cdfzf ~/Writing "Writing: "; }
-function cdr() { _cdfzf ~/Developer "Repo: "; }
+function cdr() { _cdfzf "${DEVELOPER_DIR:-$HOME/Developer}" "Repo: "; }
 
 # Search up the directory tree for a file matching a pattern.
 # Returns the full path to the first match.

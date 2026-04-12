@@ -35,8 +35,8 @@ export CLICOLOR=YES
 # enable programmable completion features (you don't need to enable
 # this, if it's already enabled in /etc/bash.bashrc and /etc/profile
 # sources /etc/bash.bashrc).
-[ -f "$(brew --prefix)/etc/profile.d/bash_completion.sh" ] && source "$(brew --prefix)/etc/profile.d/bash_completion.sh"
-eval "$(fzf --bash)"
+[ -n "$(command -v brew)" ] && [ -f "$(brew --prefix)/etc/profile.d/bash_completion.sh" ] && source "$(brew --prefix)/etc/profile.d/bash_completion.sh"
+command -v fzf &>/dev/null && eval "$(fzf --bash)"
 
 if [ -f ~/.config/ripgrep/.rgrc ]; then
     export RIPGREP_CONFIG_PATH=~/.config/ripgrep/.rgrc
@@ -48,6 +48,7 @@ export EDITOR=nvim
 
 [ -f ~/.aliases ] && source ~/.aliases
 test -f ~/.localshell && source ~/.localshell
+: "${DEVELOPER_DIR:=$HOME/Developer}"
 
 # go binaries
 command -v go > /dev/null && export PATH="$PATH:$(go env GOPATH)/bin"
@@ -56,7 +57,7 @@ command -v go > /dev/null && export PATH="$PATH:$(go env GOPATH)/bin"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-eval "$(starship init bash)"
+command -v starship &>/dev/null && eval "$(starship init bash)"
 
 # nvm
 export NVM_DIR="$HOME/.nvm"
@@ -65,23 +66,56 @@ export NVM_DIR="$HOME/.nvm"
 # nvm end
 
 # pnpm
-export PNPM_HOME="/Users/drew.hays/Library/pnpm"
+if [[ "$(uname)" == "Darwin" ]]; then
+  export PNPM_HOME="$HOME/Library/pnpm"
+else
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+fi
 case ":$PATH:" in
   *":$PNPM_HOME:"*) ;;
   *) export PATH="$PNPM_HOME:$PATH" ;;
 esac
 # pnpm end
 
-. "$HOME/.atuin/bin/env"
+[ -f "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
 [[ -f ~/.bash-preexec.sh ]] && source ~/.bash-preexec.sh
-eval "$(atuin init bash)"
+command -v atuin &>/dev/null && eval "$(atuin init bash)"
 
 # opencode
-export PATH=/Users/drew.hays/.opencode/bin:$PATH
+export PATH="$HOME/.opencode/bin:$PATH"
 
 # Added by LM Studio CLI (lms)
-export PATH="$PATH:/Users/drew.hays/.lmstudio/bin"
+export PATH="$PATH:$HOME/.lmstudio/bin"
 # End of LM Studio CLI section
 
-. "$HOME/.cargo/env"
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 command -v sesh &>/dev/null && eval "$(sesh init bash)"
+
+# Periodically check for missing tools (every 30 days)
+_check_missing_tools() {
+    local stamp="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles_tool_check"
+    local interval_days=30
+    local now last
+    now=$(date +%s)
+    last=$(cat "$stamp" 2>/dev/null || echo 0)
+    (( (now - last) / 86400 < interval_days )) && return
+
+    local missing=()
+    command -v fzf      &>/dev/null || missing+=("fzf")
+    command -v atuin    &>/dev/null || missing+=("atuin")
+    command -v starship &>/dev/null || missing+=("starship")
+    command -v gh       &>/dev/null || missing+=("gh")
+    command -v gum      &>/dev/null || missing+=("gum")
+    command -v sesh     &>/dev/null || missing+=("sesh")
+    command -v delta    &>/dev/null || missing+=("delta")
+    [ -f "$HOME/.cargo/env" ]       || missing+=("rust/cargo")
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "dotfiles: missing tools: ${missing[*]}"
+    fi
+
+    mkdir -p "$(dirname "$stamp")"
+    echo "$now" > "$stamp"
+}
+_check_missing_tools
+unset -f _check_missing_tools
