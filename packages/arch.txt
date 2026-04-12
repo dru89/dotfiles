@@ -1,0 +1,14 @@
+# Core utilities
+stow
+tmux
+which
+less
+man-db
+base-devel
+tree-sitter-cli
+
+# Languages (for neovim LSP servers)
+go
+nodejs
+npm
+rust
