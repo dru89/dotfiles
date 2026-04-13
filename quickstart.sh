@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 command -v brew > /dev/null || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 command -v stow > /dev/null || brew install stow
+stow --target "$HOME" atuin
 stow --target "$HOME" bash
 stow --target "$HOME" curl
 stow --target "$HOME" git
