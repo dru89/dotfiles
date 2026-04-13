@@ -175,12 +175,14 @@ clone() {
     local target_dir="$base_dir/$host/$path"
     if [[ -d "$target_dir" ]]; then
         echo "Already exists: $target_dir" >&2
+        _cdfzf_record "$base_dir" "$host/$path"
         cd "$target_dir"
         return 0
     fi
     echo "Cloning $url -> $target_dir"
     mkdir -p "$(dirname "$target_dir")"
     if git clone "${extra_args[@]}" "$url" "$target_dir"; then
+        _cdfzf_record "$base_dir" "$host/$path"
         cd "$target_dir"
     else
         return 1
@@ -418,12 +420,89 @@ reorg() {
     fi
 }
 
+# Frecency-ranked directory picker using fzf.
+#
+# Maintains a history file at ~/.local/share/cdfzf/history with one
+# <epoch>\t<root>\t<relative-path> per visit. Repos are scored using
+# Firefox-style recency-decayed frecency: visits in the last 4 hours
+# count for 100 points, last day 70, last week 50, last month 30,
+# older visits 10. Repos with no history fall back to .git mtime.
+
+_CDFZF_HISTORY="${XDG_DATA_HOME:-$HOME/.local/share}/cdfzf/history"
+
+# Record a visit to the frecency history file.
+# Usage: _cdfzf_record <root> <relative-path>
+_cdfzf_record() {
+    local root="$1" relpath="$2"
+    mkdir -p "$(dirname "$_CDFZF_HISTORY")"
+    printf '%s\t%s\t%s\n' "$(date +%s)" "$root" "$relpath" >> "$_CDFZF_HISTORY"
+}
+
+# Sort a list of relative repo paths by frecency score.
+# Reads repo paths on stdin, outputs sorted paths on stdout.
+# Repos with history are scored by recency-decayed frequency.
+# Repos with no history are sorted by .git mtime (most recent first).
+# Usage: _cdfzf_rank <root> < repo_list
+_cdfzf_rank() {
+    local root="$1"
+    local tagged
+    tagged=$(awk -v root="$root" -v now="$(date +%s)" -v histfile="$_CDFZF_HISTORY" '
+    BEGIN {
+        while ((getline line < histfile) > 0) {
+            n = split(line, parts, "\t")
+            if (n < 3) continue
+            ts = parts[1]; hroot = parts[2]; hpath = parts[3]
+            if (hroot != root) continue
+            age = now - ts
+            if      (age < 14400) w = 100   # 4 hours
+            else if (age < 86400) w = 70    # 1 day
+            else if (age < 604800) w = 50   # 1 week
+            else if (age < 2592000) w = 30  # 30 days
+            else w = 10
+            score[hpath] += w
+        }
+        close(histfile)
+    }
+    {
+        path = $0
+        if (path in score)
+            printf "S\t%.0f\t%s\n", score[path], path
+        else
+            printf "U\t%s\n", path
+    }
+    ')
+
+    # Scored repos: sort by score descending, emit first.
+    grep '^S' <<< "$tagged" | sort -t$'\t' -k2,2rn | cut -f3
+
+    # Unscored repos: sort by .git mtime (newest first).
+    local unscored
+    unscored=$(grep '^U' <<< "$tagged" | cut -f2)
+    if [[ -n "$unscored" ]]; then
+        local line
+        while IFS= read -r line; do
+            local gitdir="$root/$line/.git"
+            local mtime=0
+            if [[ -d "$gitdir" ]]; then
+                # macOS uses stat -f %m, Linux uses stat -c %Y
+                mtime=$(stat -f %m "$gitdir" 2>/dev/null \
+                     || stat -c %Y "$gitdir" 2>/dev/null \
+                     || echo 0)
+            fi
+            printf '%s\t%s\n' "$mtime" "$line"
+        done <<< "$unscored" | sort -t$'\t' -k1,1rn | cut -f2
+    fi
+}
+
 # Jump to a git repo under a given root directory using fzf.
+# Usage: _cdfzf <root> <prompt> [query]
+# If a query is given and matches exactly one repo, cd directly without fzf.
 _cdfzf() {
     local root="$1"
     local prompt="${2:-Select repo: }"
-    local repo_dir
-    repo_dir=$(find "$root" -maxdepth 6 \
+    local query="$3"
+    local repos
+    repos=$(find "$root" -maxdepth 6 \
         \( -name "node_modules" -o \
            -name ".venv" -o \
            -name "venv" -o \
@@ -437,15 +516,34 @@ _cdfzf() {
            -name ".cache" \) -type d -prune -o \
         -name ".git" -type d -exec dirname {} \; -prune 2>/dev/null | \
         sed "s|^$root/||" | \
-        fzf --height 40% --reverse --border --prompt="$prompt")
+        _cdfzf_rank "$root")
+
+    # If a query was provided, check for a single match before launching fzf.
+    if [[ -n "$query" ]]; then
+        local matches
+        matches=$(fzf --filter="$query" <<< "$repos")
+        local count
+        count=$(wc -l <<< "$matches")
+        if [[ "$count" -eq 1 && -n "$matches" ]]; then
+            echo "$matches"
+            _cdfzf_record "$root" "$matches"
+            cd "$root/$matches"
+            return
+        fi
+    fi
+
+    local repo_dir
+    repo_dir=$(fzf --height 40% --reverse --border --prompt="$prompt" \
+        --no-sort ${query:+--query="$query"} <<< "$repos")
 
     if [[ -n "$repo_dir" ]]; then
+        _cdfzf_record "$root" "$repo_dir"
         cd "$root/$repo_dir"
     fi
 }
 
-function cdw() { _cdfzf ~/Writing "Writing: "; }
-function cdr() { _cdfzf "${DEVELOPER_DIR:-$HOME/Developer}" "Repo: "; }
+function cdw() { _cdfzf ~/Writing "Writing: " "$1"; }
+function cdr() { _cdfzf "${DEVELOPER_DIR:-$HOME/Developer}" "Repo: " "$1"; }
 
 # Search up the directory tree for a file matching a pattern.
 # Returns the full path to the first match.
