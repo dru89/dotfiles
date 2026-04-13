@@ -438,15 +438,12 @@ _cdfzf_record() {
     printf '%s\t%s\t%s\n' "$(date +%s)" "$root" "$relpath" >> "$_CDFZF_HISTORY"
 }
 
-# Sort a list of relative repo paths by frecency score.
-# Reads repo paths on stdin, outputs sorted paths on stdout.
-# Repos with history are scored by recency-decayed frequency.
-# Repos with no history are sorted by .git mtime (most recent first).
-# Usage: _cdfzf_rank <root> < repo_list
+# Sort repo paths by frecency score, falling back to .git mtime.
+# Reads <mtime>\t<relative-path> lines on stdin, outputs sorted paths.
+# Usage: _cdfzf_rank <root> < mtime_path_list
 _cdfzf_rank() {
     local root="$1"
-    local tagged
-    tagged=$(awk -v root="$root" -v now="$(date +%s)" -v histfile="$_CDFZF_HISTORY" '
+    awk -v root="$root" -v now="$(date +%s)" -v histfile="$_CDFZF_HISTORY" '
     BEGIN {
         while ((getline line < histfile) > 0) {
             n = split(line, parts, "\t")
@@ -464,34 +461,13 @@ _cdfzf_rank() {
         close(histfile)
     }
     {
-        path = $0
+        mtime = $1; path = $2
         if (path in score)
-            printf "S\t%.0f\t%s\n", score[path], path
+            printf "%d\t%s\n", 10000000000 + score[path], path
         else
-            printf "U\t%s\n", path
+            printf "%d\t%s\n", mtime, path
     }
-    ')
-
-    # Scored repos: sort by score descending, emit first.
-    grep '^S' <<< "$tagged" | sort -t$'\t' -k2,2rn | cut -f3
-
-    # Unscored repos: sort by .git mtime (newest first).
-    local unscored
-    unscored=$(grep '^U' <<< "$tagged" | cut -f2)
-    if [[ -n "$unscored" ]]; then
-        local line
-        while IFS= read -r line; do
-            local gitdir="$root/$line/.git"
-            local mtime=0
-            if [[ -d "$gitdir" ]]; then
-                # macOS uses stat -f %m, Linux uses stat -c %Y
-                mtime=$(stat -f %m "$gitdir" 2>/dev/null \
-                     || stat -c %Y "$gitdir" 2>/dev/null \
-                     || echo 0)
-            fi
-            printf '%s\t%s\n' "$mtime" "$line"
-        done <<< "$unscored" | sort -t$'\t' -k1,1rn | cut -f2
-    fi
+    ' | sort -t$'\t' -k1,1rn | cut -f2
 }
 
 # Jump to a git repo under a given root directory using fzf.
@@ -501,8 +477,10 @@ _cdfzf() {
     local root="$1"
     local prompt="${2:-Select repo: }"
     local query="$3"
-    local repos
-    repos=$(find "$root" -maxdepth 6 \
+
+    # Find all .git dirs, collect their paths into an array.
+    local gitdirs
+    mapfile -t gitdirs < <(find "$root" -maxdepth 6 \
         \( -name "node_modules" -o \
            -name ".venv" -o \
            -name "venv" -o \
@@ -514,14 +492,24 @@ _cdfzf() {
            -name "dist" -o \
            -name ".next" -o \
            -name ".cache" \) -type d -prune -o \
-        -name ".git" -type d -exec dirname {} \; -prune 2>/dev/null | \
-        sed "s|^$root/||" | \
-        _cdfzf_rank "$root")
+        -name ".git" -type d -print -prune 2>/dev/null)
 
-    # If a query was provided, check for a single match before launching fzf.
+    [[ ${#gitdirs[@]} -eq 0 ]] && return
+
+    # Batch stat all .git dirs in a single call, then pair mtimes with paths.
+    local mtimes
+    mtimes=$(stat -f %m "${gitdirs[@]}" 2>/dev/null \
+          || stat -c %Y "${gitdirs[@]}" 2>/dev/null)
+
+    local repos
+    repos=$(paste <(echo "$mtimes") <(printf '%s\n' "${gitdirs[@]}" | sed "s|/\.git$||;s|^$root/||") \
+        | _cdfzf_rank "$root")
+
+    # If a query was provided, check for a single exact (substring) match
+    # before launching fzf. Fuzzy matching is only used interactively.
     if [[ -n "$query" ]]; then
         local matches
-        matches=$(fzf --filter="$query" <<< "$repos")
+        matches=$(fzf --filter="'$query" <<< "$repos")
         local count
         count=$(wc -l <<< "$matches")
         if [[ "$count" -eq 1 && -n "$matches" ]]; then
