@@ -78,6 +78,8 @@ esac
 # pnpm end
 
 [ -f "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
+# bash-preexec: required by atuin (and starship) for preexec/precmd hooks in bash.
+# Vendored from https://github.com/rcaloras/bash-preexec — check for updates occasionally.
 [[ -f ~/.bash-preexec.sh ]] && source ~/.bash-preexec.sh
 command -v atuin &>/dev/null && eval "$(atuin init bash)"
 
