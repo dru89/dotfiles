@@ -91,4 +91,4 @@ Full Lua config under `neovim/.config/nvim/`. Uses lazy.nvim for plugin manageme
 
 - **tmux** — no `source-file -q ~/.tmux.local.conf` mechanism. If machine-specific tmux config is needed, that line should be added.
 - **starship** — no include mechanism in starship's config format. Would need conditional logic or a build step.
-- **ghostty** — supports `config-file` for includes, but the current config is minimal (two keybinds). Note: the live file at `~/.config/ghostty/config` may not be a stow symlink. Check with `ls -la` before editing.
+- **ghostty** — supports `config-file` for includes, but the current config is minimal (two keybinds).
