@@ -3,3 +3,4 @@ config/nvim/plugged
 config/nvim/plugged/
 config/nvim/backups/
 .DS_Store
+.claude/settings.local.json
