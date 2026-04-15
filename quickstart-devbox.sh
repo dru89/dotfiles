@@ -14,6 +14,9 @@ command -v stow &>/dev/null || sudo apt-get install -y -q stow 2>/dev/null
 # Remove files useradd copies from /etc/skel — they would conflict with stow.
 rm -f "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"
 
+# Pre-create ~/bin so stow creates per-file symlinks, not a directory symlink.
+mkdir -p "$HOME/bin"
+
 # Stow Linux-compatible topics.
 # Skipped topics:
 #   homebrew  — brew doesn't exist on Linux
@@ -22,7 +25,7 @@ rm -f "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"
 #   tmux      — not installed in the devbox base image
 #   neovim    — not installed in the devbox base image
 #   atuin     — devbox entrypoint writes key/session/config directly
-for topic in bash shell git starship ripgrep curl atuin; do
+for topic in bash shell git starship ripgrep curl atuin bin; do
     if [[ -d "${DOTFILES}/${topic}" ]]; then
         stow --target "$HOME" --dir "$DOTFILES" "$topic"
         echo "  stowed: ${topic}"

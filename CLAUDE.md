@@ -14,13 +14,14 @@ These dotfiles run on multiple machines. Changes must work everywhere or be guar
 
 Two quickstart scripts handle installation:
 - `quickstart.sh` — macOS: installs Homebrew, stow, stows all topics, runs `brew bundle`
-- `quickstart-devbox.sh` — Linux: installs stow via apt, stows only the Linux-compatible subset (bash, shell, git, starship, ripgrep, curl, atuin)
+- `quickstart-devbox.sh` — Linux: installs stow via apt, stows only the Linux-compatible subset (bash, shell, git, starship, ripgrep, curl, atuin, bin)
 
 ## Repo layout
 
 ```
 atuin/       → ~/.config/atuin/          Atuin shell history
 bash/        → ~/.bashrc, etc.           Shell init, PATH, env
+bin/         → ~/bin/                    Standalone scripts (see below)
 curl/        → ~/.curlrc                 Custom user-agent
 ghostty/     → ~/.config/ghostty/        Terminal keybinds
 git/         → ~/.gitconfig, etc.        Git, delta, tig
@@ -75,13 +76,21 @@ If a diff contains work-specific or machine-specific changes to a tracked file, 
 - `cdr [query]` / `cdw [query]` — fuzzy directory picker for repos (`$DEVELOPER_DIR`) and writing projects (`~/Writing`). Frecency-ranked, with query prefill and single-match auto-cd.
 - `_cdfzf` — shared implementation for `cdr`/`cdw`. Maintains a frecency history at `~/.local/share/cdfzf/history`.
 
-## Companion scripts in ~/bin/
+## Scripts in bin/
 
-`~/bin/` is on `$PATH` (set in `.bashrc`). These scripts live outside this repo but work alongside the dotfiles:
+`~/bin/` is on `$PATH` (set in `.bashrc`). The `bin/` stow topic manages tracked scripts; other tools symlink into `~/bin/` independently. The quickstart scripts pre-create `~/bin/` with `mkdir -p` so stow creates per-file symlinks rather than folding the directory (which would cause untracked files to land in the repo).
 
+Tracked scripts:
+
+- `find-up <pattern>` — walks up the directory tree to find a file matching a glob. Standalone version of the `findup` shell function.
 - `newdoc <name>` — creates a writing project at `~/Writing/<name>/` with git, reference dir, and Obsidian project link. Records to cdfzf frecency history.
-- `find-up <pattern>` — standalone version of the `findup` shell function
-- Various symlinks to tools in `~/Developer/` (doc-tools, teams-archive, transcribe, etc.)
+- `cleanup-branches` — deletes local git branches whose last commit is older than 3 weeks. Protects main, master, and the current branch.
+- `mute [on|off|toggle|status]` — macOS-only fake mute that sets volume to 1 instead of 0 so CoreAudio process taps still receive audio data.
+
+Untracked symlinks (managed by their own repos):
+
+- doc-tools: `docfetch`, `gcat`, `gcomments`, `gfetch`, `gpush`, `spfetch`, `cfetch`
+- Other tools: `teams-archive`, `transcribe`, `screenshot`, `flush-scratchpad`
 
 ## Neovim
 

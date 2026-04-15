@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Delete local branches whose last commit is older than WEEKS weeks.
+# Protects main, master, and the current branch.
+
+WEEKS=3
+PROTECTED_BRANCHES=("main" "master")
+
+# Calculate cutoff timestamp — portable across macOS and Linux.
+cutoff_ts=$(perl -e "print time - ${WEEKS}*7*24*60*60")
+
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+# Collect stale branches. git %(committerdate:unix) gives epoch directly,
+# so no platform-specific date parsing is needed.
+stale=()
+while read -r branch commit_ts; do
+  # Skip protected branches and current branch
+  for p in "${PROTECTED_BRANCHES[@]}"; do
+    [[ "$branch" == "$p" ]] && continue 2
+  done
+  [[ "$branch" == "$current_branch" ]] && continue
+
+  if [[ "$commit_ts" -lt "$cutoff_ts" ]]; then
+    stale+=("$branch")
+  fi
+done < <(git for-each-ref --format='%(refname:short) %(committerdate:unix)' refs/heads)
+
+if [[ ${#stale[@]} -eq 0 ]]; then
+  echo "No branches older than ${WEEKS} weeks to delete."
+  exit 0
+fi
+
+echo "Deleting ${#stale[@]} branch(es) older than ${WEEKS} weeks:"
+for b in "${stale[@]}"; do
+  echo "  $b"
+  git branch -D "$b"
+done

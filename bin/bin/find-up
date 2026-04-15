@@ -1,0 +1,34 @@
+#!/bin/bash
+
+usage() {
+    echo "Usage: find-up <pattern>"
+    echo "Searches up the directory tree for files matching the pattern"
+    echo "Returns the full path to the first matching file"
+    exit 1
+}
+
+# Check if we have an argument
+if [ $# -ne 1 ]; then
+    usage
+fi
+
+pattern="$1"
+current_dir="$(pwd)"
+
+while true; do
+    # Check if any files match the pattern in current directory
+    matching_file=$(find "$current_dir" -maxdepth 1 -name "$pattern" -print -quit 2>/dev/null)
+    if [ -n "$matching_file" ]; then
+        echo "$matching_file"
+        exit 0
+    fi
+    
+    # If we're at the root directory, stop searching
+    if [ "$current_dir" = "/" ]; then
+        echo "No matching files found in directory tree" >&2
+        exit 1
+    fi
+    
+    # Move up to parent directory
+    current_dir="$(dirname "$current_dir")"
+done

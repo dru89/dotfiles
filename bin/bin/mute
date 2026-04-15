@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Fake mute: sets volume to 1 instead of 0 so CoreAudio process taps
+# (like Char) still receive non-zero audio data. Toggling again restores
+# the previous volume.
+#
+# macOS only — uses osascript for volume control.
+#
+# Usage:
+#   mute          Toggle between "muted" (volume 1) and previous volume
+#   mute on       Set volume to 1
+#   mute off      Restore previous volume
+#   mute status   Show current state
+
+STATE_FILE="${TMPDIR:-/tmp}/.mute-state"
+
+get_volume() {
+  osascript -e 'output volume of (get volume settings)'
+}
+
+get_muted() {
+  osascript -e 'output muted of (get volume settings)'
+}
+
+set_volume() {
+  osascript -e "set volume output volume $1 without output muted"
+}
+
+fake_mute() {
+  local current
+  current="$(get_volume)"
+
+  # Don't save "1" as the restore volume
+  if [[ "$current" -gt 1 ]]; then
+    echo "$current" > "$STATE_FILE"
+  fi
+
+  set_volume 1
+  echo "Volume set to 1 (fake mute)"
+}
+
+restore() {
+  if [[ -f "$STATE_FILE" ]]; then
+    local saved
+    saved="$(cat "$STATE_FILE")"
+    set_volume "$saved"
+    rm -f "$STATE_FILE"
+    echo "Volume restored to $saved"
+  else
+    set_volume 50
+    echo "Volume restored to 50 (no saved state)"
+  fi
+}
+
+case "${1:-toggle}" in
+  on)
+    fake_mute
+    ;;
+  off)
+    restore
+    ;;
+  toggle)
+    if [[ -f "$STATE_FILE" ]]; then
+      restore
+    else
+      fake_mute
+    fi
+    ;;
+  status)
+    vol="$(get_volume)"
+    if [[ -f "$STATE_FILE" ]]; then
+      saved="$(cat "$STATE_FILE")"
+      echo "Fake muted (volume: $vol, will restore to: $saved)"
+    else
+      echo "Normal (volume: $vol)"
+    fi
+    ;;
+  *)
+    echo "Usage: mute [on|off|toggle|status]"
+    exit 1
+    ;;
+esac

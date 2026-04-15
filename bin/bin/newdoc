@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WRITING_DIR="$HOME/Writing"
+
+usage() {
+  echo "Usage: newdoc <project-name>"
+  echo ""
+  echo "Creates a new writing project:"
+  echo "  - ~/Writing/<project-name>/"
+  echo "  - ~/Writing/<project-name>/reference/"
+  echo "  - ~/Writing/<project-name>/<project-name>.md  (empty draft)"
+  echo "  - ~/Writing/<project-name>/.siftrc.json       (links to Obsidian project)"
+  echo "  - Local git repo with .gitignore (no remote)"
+  echo "  - Obsidian project (created if it doesn't exist)"
+  exit 1
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+fi
+
+NAME="$*"
+PROJECT_DIR="$WRITING_DIR/$NAME"
+
+if [[ -d "$PROJECT_DIR" ]]; then
+  echo "Error: Directory already exists: $PROJECT_DIR"
+  exit 1
+fi
+
+# Create directory structure
+mkdir -p "$PROJECT_DIR/reference"
+
+# Create empty draft
+touch "$PROJECT_DIR/$NAME.md"
+
+# Create sift project if it doesn't already exist
+if sift project path -- "$NAME" > /dev/null 2>&1; then
+  echo "Sift project \"$NAME\" already exists."
+else
+  sift project create -- "$NAME"
+  sift project set --status active -- "$NAME"
+fi
+
+# Write .siftrc.json
+cat > "$PROJECT_DIR/.siftrc.json" <<EOF
+{
+  "project": "$NAME"
+}
+EOF
+
+# Write .gitignore — skip reference docs (binary PDFs, docx, etc.)
+cat > "$PROJECT_DIR/.gitignore" <<EOF
+reference/
+EOF
+
+# Initialize local-only git repo and make initial commit
+git -C "$PROJECT_DIR" init -q
+git -C "$PROJECT_DIR" add -A
+git -C "$PROJECT_DIR" commit -q -m "Initial project setup"
+
+# Record in cdfzf frecency history so cdw ranks it immediately
+_CDFZF_HISTORY="${XDG_DATA_HOME:-$HOME/.local/share}/cdfzf/history"
+mkdir -p "$(dirname "$_CDFZF_HISTORY")"
+printf '%s\t%s\t%s\n' "$(date +%s)" "$WRITING_DIR" "$NAME" >> "$_CDFZF_HISTORY"
+
+echo "Created writing project: $PROJECT_DIR"
+echo "  Draft:     $PROJECT_DIR/$NAME.md"
+echo "  Reference: $PROJECT_DIR/reference/"
+echo "  Git:       local repo initialized"
+echo "  Sift:      linked to project \"$NAME\""
