@@ -1,0 +1,5 @@
+# Agent skills installed globally via: npx skills add <repo> -g -y
+# Lines starting with # and blank lines are ignored.
+dru89/sesh
+dru89/sift
+stephenturner/skill-deslop

@@ -18,13 +18,12 @@ stow --target "$HOME" tmux
 (cd && brew bundle)
 
 # Install global agent skills (requires npm/npx from brew bundle).
-if command -v npx > /dev/null; then
-  npx skills add dru89/sesh -g -y
-  npx skills add dru89/sift -g -y
-  npx skills add stephenturner/skill-deslop -g -y
+DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if command -v npx > /dev/null && [[ -f "$DOTFILES/skills.txt" ]]; then
+  grep -v '^#' "$DOTFILES/skills.txt" | grep -v '^$' | while read -r skill; do
+    npx skills add "$skill" -g -y
+  done
 else
-  echo "Skipped agent skills install — npx not found. Install Node and re-run, or run manually:"
-  echo "  npx skills add dru89/sesh -g -y"
-  echo "  npx skills add dru89/sift -g -y"
-  echo "  npx skills add stephenturner/skill-deslop -g -y"
+  echo "Skipped agent skills install — npx not found. Install Node and run:"
+  echo "  grep -v '^#' skills.txt | grep -v '^\$' | while read -r s; do npx skills add \"\$s\" -g -y; done"
 fi

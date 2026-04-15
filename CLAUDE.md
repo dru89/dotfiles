@@ -30,6 +30,7 @@ neovim/      → ~/.config/nvim/           Full Lua neovim config
 packages/    (not stowed)                Arch package list for ds9
 ripgrep/     → ~/.config/ripgrep/.rgrc   Smart-case default
 shell/       → ~/.aliases                Functions: clone, reorg, cdr, cdw, etc.
+skills.txt   (not stowed)                Agent skills installed via npx skills add
 starship/    → ~/.config/starship.toml   Prompt config
 tmux/        → ~/.tmux.conf              tmux config
 ```
