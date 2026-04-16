@@ -47,6 +47,7 @@ fi
 export EDITOR=nvim
 
 [ -f ~/.aliases ] && source ~/.aliases
+[ -f ~/.developer ] && source ~/.developer
 test -f ~/.localshell && source ~/.localshell
 : "${DEVELOPER_DIR:=$HOME/Developer}"
 

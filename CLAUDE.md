@@ -22,6 +22,7 @@ Two quickstart scripts handle installation:
 atuin/       → ~/.config/atuin/          Atuin shell history
 bash/        → ~/.bashrc, etc.           Shell init, PATH, env
 bin/         → ~/bin/                    Standalone scripts (see below)
+claude/      → ~/.claude/CLAUDE.md       Agent instructions (Claude Code / OpenCode)
 curl/        → ~/.curlrc                 Custom user-agent
 ghostty/     → ~/.config/ghostty/        Terminal keybinds
 git/         → ~/.gitconfig, etc.        Git, delta, tig
@@ -29,7 +30,7 @@ homebrew/    → ~/Brewfile                Shared Homebrew packages
 neovim/      → ~/.config/nvim/           Full Lua neovim config
 packages/    (not stowed)                Arch package list for ds9
 ripgrep/     → ~/.config/ripgrep/.rgrc   Smart-case default
-shell/       → ~/.aliases                Functions: clone, reorg, cdr, cdw, etc.
+shell/       → ~/.aliases, ~/.developer   General shell utils + developer dir management
 skills.txt   (not stowed)                Agent skills installed via npx skills add
 starship/    → ~/.config/starship.toml   Prompt config
 tmux/        → ~/.tmux.conf              tmux config
@@ -71,6 +72,16 @@ Before committing, always diff against HEAD. Tools (including AI agents) sometim
 If a diff contains work-specific or machine-specific changes to a tracked file, move those changes to the appropriate escape hatch and revert the tracked file before committing.
 
 ## Key functions in shell/.aliases
+
+- `randstr [len]` / `randhex [len]` — random string generators
+- `serve [dir] [port]` — quick HTTP server via Python
+- `jql [filter]` — colorized `jq` piped through `less`
+- `showcert <domain>` — display TLS certificate details
+- `findup <pattern>` / `cdup <pattern>` — search up the directory tree for a file
+
+## Developer directory management (shell/.developer)
+
+All repo cloning, organization, and navigation functions live in `shell/.developer`. The file has a detailed header comment describing the layout conventions.
 
 - `clone <url>` — clones to `$DEVELOPER_DIR/<host>/<org>/<repo>`, creating the directory structure automatically. Detects GitHub orgs and GitLab groups.
 - `reorg [--apply]` — audits repos under `$DEVELOPER_DIR` and moves any whose path doesn't match their origin remote. Dry run by default.
