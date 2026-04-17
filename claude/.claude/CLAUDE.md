@@ -65,6 +65,7 @@ I sometimes work on documents that are politically sensitive internally — prop
 
 ### GitHub CLI
 - Use `gh rc` instead of `gh repo create`. This alias defaults to `--public` unless `--private` or `--internal` is explicitly passed. Enterprise orgs default repos to private, and Drew never wants that.
+- Prefer `gh` over WebFetch for accessing GitHub content (issues, PRs, repos, discussions). `gh search issues`, `gh api`, `gh issue view`, etc. are faster and more structured than scraping HTML. Fall back to WebFetch only when `gh` doesn't provide what you need (e.g., rendered README content, non-GitHub URLs).
 
 ### Git email per host
 - If a repo already has a local `user.email` set (`git config --local user.email`), respect it — don't override.
@@ -100,25 +101,26 @@ When asked to clone a repo (non-ephemeral work), use `clone <url>` for a standar
 
 The `reorg` function (in `shell/.developer`) audits all repos under `~/Developer` and moves any whose filesystem path doesn't match their origin remote. Run `reorg` for a dry run, `reorg --apply` to execute moves interactively.
 
-### Branching in worktree repos
+### Worktree management with Worktrunk
+Worktrees are managed by [Worktrunk](https://worktrunk.dev) (`wt` command), not custom shell functions. The `clone --wt` and `convert-wt` functions in `shell/.developer` handle creating the bare-container layout; Worktrunk handles everything after that.
+
+Worktrunk config is at `~/.config/worktrunk/config.toml`. The `worktree-path` template is set to `{{ repo_path }}/../{{ branch | sanitize }}`, which places worktrees as siblings inside the bare container — matching the layout described above.
+
 When working inside a worktree container, **do not use `git switch -c` or `git checkout -b` to create a new branch** — that changes the branch in the current worktree directory without creating a parallel checkout, which defeats the purpose of worktrees and leaves the directory name mismatched with its branch.
 
-Instead, use the `wt` helper to create a new worktree:
+Instead, use Worktrunk:
 ```bash
-wt add new-branch        # creates worktree + branch, cds into it
+wt switch -c new-branch              # create worktree + branch, cd into it
+wt switch -c new-branch -x opencode  # same, but launch OpenCode in it
+wt switch existing-branch             # switch to an existing worktree
+wt switch                             # interactive picker with diff preview
 ```
 
-Or with raw git (equivalent):
-```bash
-git worktree add ../new-branch -b new-branch
-cd ../new-branch
-```
-
-Use `git switch` only when you intentionally want to change what branch the *current* worktree tracks (e.g., switching back to `main` after a merge). Use `wt add` when you want a *parallel* checkout of a different branch.
-
-Other `wt` subcommands:
-- `wt` or `wt [query]` — list worktrees for the current repo, fzf to pick one
-- `wt rm <name>` — remove a worktree (prompts to delete the branch too)
+Other common commands:
+- `wt list` — show all worktrees with status (staged changes, ahead/behind, CI, PR links)
+- `wt remove` — remove a worktree and clean up the branch
+- `wt merge` — squash, rebase, fast-forward merge, and clean up in one command
+- `wt step commit` — commit with LLM-generated message
 
 To convert a standard clone to a worktree container, run `convert-wt` from the repo root. It requires a clean working tree and will back up the original.
 
@@ -126,6 +128,23 @@ To detect whether you're in a worktree (vs. a standard clone), check for the `.b
 
 ### Personal vs. work-specific config
 Dotfiles (`~/dotfiles`) are personal and tracked on public GitHub. Work-specific shell config lives in `~/.env.local` (untracked, sourced by `.bashrc`). Work-specific Homebrew packages live in `~/.Brewfile` (untracked, run with `brew bundle --global`). If something feels work-specific — env vars, credentials, work tool paths, enterprise CLI completions — it belongs in one of those two files, not in dotfiles.
+
+### Agent skills
+Small, portable agent skills live in two repos depending on audience:
+
+- **Public / universal:** [`dru89/skills`](https://github.com/dru89/skills) on `github.com` — skills that aren't work-specific (e.g., Drafts integration, general-purpose utilities). This is a public repo. Don't put anything Disney-specific here.
+- **Work-specific:** `github.twdcgrid.net/drew-hays/skills` — skills that reference internal tools, APIs, or naming conventions. Create this repo if/when it's needed.
+
+**Installing skills:**
+```bash
+npx skills add dru89/skills                # install all public skills
+npx skills add dru89/skills -s drafts      # install a specific skill
+npx skills add dru89/skills -g -y          # global, no prompts
+```
+
+**Creating a new skill:** Each skill is a directory containing a `SKILL.md` with YAML frontmatter (`name`, `description`) and markdown instructions. Add the directory to the appropriate repo, commit, push. Install with `npx skills add`.
+
+When building a new skill that doesn't belong in an existing repo, decide: is it universal or work-specific? Public goes to `dru89/skills`, work-specific goes to the enterprise repo.
 
 ### Machine context
 These dotfiles and this CLAUDE.md are shared across multiple machines. Check `$MACHINE_CONTEXT` to determine which one you're on:

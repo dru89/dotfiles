@@ -58,8 +58,6 @@ command -v go > /dev/null && export PATH="$PATH:$(go env GOPATH)/bin"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-command -v starship &>/dev/null && eval "$(starship init bash)"
-
 # nvm
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
@@ -81,8 +79,11 @@ esac
 [ -f "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
 # bash-preexec: required by atuin (and starship) for preexec/precmd hooks in bash.
 # Vendored from https://github.com/rcaloras/bash-preexec — check for updates occasionally.
+# Must be sourced BEFORE starship init so starship registers as a precmd hook.
 [[ -f ~/.bash-preexec.sh ]] && source ~/.bash-preexec.sh
 command -v atuin &>/dev/null && eval "$(atuin init bash)"
+
+command -v starship &>/dev/null && eval "$(starship init bash)"
 
 # opencode
 export PATH="$HOME/.opencode/bin:$PATH"
@@ -122,3 +123,5 @@ _check_missing_tools() {
 }
 _check_missing_tools
 unset -f _check_missing_tools
+
+if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init bash)"; fi
