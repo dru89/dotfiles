@@ -63,7 +63,13 @@ opt.backup = false
 opt.writebackup = false
 
 -- ==================== PERSISTENT UNDO ========================
-local undodir = vim.fn.stdpath("config") .. "/backups"
+local undodir
+if vim.fn.has("win32") == 1 then
+  undodir = vim.fn.expand("$LOCALAPPDATA") .. "\\nvim-undo"
+else
+  undodir = vim.fn.stdpath("config") .. "/backups"
+end
+
 opt.undofile = true
 opt.undodir = undodir
 

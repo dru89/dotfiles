@@ -16,7 +16,12 @@ return {
     },
     keys = {
       -- File finding
-      { "<leader><leader>", "<cmd>Telescope git_files<cr>", desc = "Find git files" },
+      { "<leader><leader>", function()
+          local ok = pcall(require("telescope.builtin").git_files)
+          if not ok then
+            require("telescope.builtin").find_files()
+          end
+        end, desc = "Find files (git or all)" },
       { "<leader>t", "<cmd>Telescope find_files<cr>", desc = "Find files" },
       { "<leader>b", "<cmd>Telescope buffers<cr>", desc = "Find buffers" },
 
