@@ -36,6 +36,7 @@
 [core]
     pager = delta
     excludesfile = ~/.gitignore_global
+	autocrlf = false
 [delta]
     # plus-color = "#012800"
     # minus-color = "#340001"

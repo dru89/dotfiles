@@ -11,6 +11,7 @@ return {
       {
         "nvim-telescope/telescope-fzf-native.nvim",
         build = "make",
+        cond = vim.fn.has("win32")
       },
     },
     keys = {
@@ -81,17 +82,19 @@ return {
         },
 
         extensions = {
-          fzf = {
+          fzf = vim.fn.has("win32") == 0 and {
             fuzzy = true,
             override_generic_sorter = true,
             override_file_sorter = true,
             case_mode = "smart_case",
-          },
+          } or nil,
         },
       })
 
       -- Load extensions
-      telescope.load_extension("fzf")
+      if vim.fn.has("win32") == 0 then
+        telescope.load_extension("fzf")
+      end
     end,
   },
 
@@ -99,5 +102,6 @@ return {
   {
     "nvim-telescope/telescope-fzf-native.nvim",
     build = "make",
+    cond = vim.fn.has("win32") == 0
   },
 }

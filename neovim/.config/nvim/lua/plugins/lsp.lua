@@ -130,7 +130,6 @@ return {
   -- Mason: LSP/DAP/Linter installer
   {
     "williamboman/mason.nvim",
-    build = ":MasonUpdate",
   },
 
   {

@@ -7,6 +7,7 @@ local opt = vim.opt
 -- Ensure nvm-managed Node is available for LSP servers
 -- (nvm isn't initialized in non-interactive shells that Neovim spawns)
 local function setup_nvm_node_path()
+  if vim.fn.has("win32") == 1 then return end
   local handle = io.popen("bash -c 'source ~/.nvm/nvm.sh && dirname $(nvm which default)' 2>/dev/null")
   if handle then
     local result = handle:read("*a"):gsub("%s+$", "")
@@ -18,6 +19,12 @@ local function setup_nvm_node_path()
 end
 
 setup_nvm_node_path()
+
+-- ====================== WINDOWS COMPILER =======================
+-- Tell tree-sitter and other build tools to use gcc instead of cl.exe
+if vim.fn.has("win32") == 1 then
+  vim.env.CC = "gcc"
+end
 
 -- General settings
 opt.autoread = true                 -- Automatically reload a file when it's changed
