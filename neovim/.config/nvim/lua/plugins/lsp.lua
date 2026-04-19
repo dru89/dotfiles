@@ -28,7 +28,8 @@ return {
           "ts_ls", -- TypeScript/JavaScript
           "pyright", -- Python
           "gopls", -- Go
-          "rust_analyzer", -- Rust
+          -- "rust_analyzer", -- Rust
+          -- install through rustup
           "html",
           "cssls",
           "jsonls",
