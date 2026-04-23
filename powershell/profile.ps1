@@ -25,7 +25,7 @@ if (Get-Command atuin -ErrorAction SilentlyContinue) {
 
 # ── fnm (node version manager) ───────────────────────────────────────────────
 if (Get-Command fnm -ErrorAction SilentlyContinue) {
-    fnm env --use-on-cd --resolve-engines=false --corepack-enabled | Out-String | Invoke-Expression
+    fnm env --use-on-cd --resolve-engines=false --corepack-enabled --version-file-strategy=recursive | Out-String | Invoke-Expression
 }
 
 # ── Environment ───────────────────────────────────────────────────────────────

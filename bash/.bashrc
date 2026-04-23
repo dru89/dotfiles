@@ -59,7 +59,7 @@ export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
 # fnm (node version manager)
-command -v fnm &>/dev/null && eval "$(fnm env --use-on-cd --resolve-engines=false --corepack-enabled)"
+command -v fnm &>/dev/null && eval "$(fnm env --use-on-cd --resolve-engines=false --corepack-enabled --version-file-strategy=recursive)"
 
 [ -f "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
 # bash-preexec: required by atuin (and starship) for preexec/precmd hooks in bash.
