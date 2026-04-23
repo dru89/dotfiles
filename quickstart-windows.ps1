@@ -194,7 +194,7 @@ $wingetPkgs = @(
     @{ Id = 'Git.Git';                 Name = 'Git';          Cmd = 'git'      },
     @{ Id = 'GitHub.cli';              Name = 'gh';           Cmd = 'gh'       },
     @{ Id = 'GitHub.GitLFS';           Name = 'Git LFS';      Cmd = 'git-lfs'  },
-    @{ Id = 'OpenJS.NodeJS.LTS';       Name = 'Node.js LTS';  Cmd = 'node'     },
+    @{ Id = 'Schniz.fnm';              Name = 'fnm';           Cmd = 'fnm'      },
     @{ Id = 'BurntSushi.ripgrep.MSVC'; Name = 'ripgrep';      Cmd = 'rg'       },
     @{ Id = 'sharkdp.fd';              Name = 'fd';           Cmd = 'fd'       },
     @{ Id = 'dandavison.delta';        Name = 'delta';        Cmd = 'delta'    },
@@ -246,6 +246,22 @@ if (Get-Command scoop -ErrorAction SilentlyContinue) {
     }
 } else {
     Add-ManualStep "Once Scoop is available, install: scoop install mingw make tig less"
+}
+
+# fnm: install a default Node version if none exists yet
+if (Get-Command fnm -ErrorAction SilentlyContinue) {
+    $fnmList = fnm ls 2>$null | Out-String
+    if ($fnmList -notmatch 'default') {
+        Write-Info "Installing Node LTS via fnm"
+        fnm install --lts --corepack-enabled
+        fnm default lts-latest
+        Write-OK "Node LTS installed as fnm default"
+    } else {
+        Write-Skip "fnm default Node already set"
+    }
+    fnm env --use-on-cd | Out-String | Invoke-Expression
+} else {
+    Write-Warn "fnm not on PATH yet — restart PowerShell and re-run to install Node"
 }
 
 # tree-sitter CLI (required for nvim-treesitter grammar builds)

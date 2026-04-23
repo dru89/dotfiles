@@ -27,7 +27,7 @@ brew "neovim"
 brew "netcat"
 brew "nginx"
 brew "nmap"
-brew "node", link: false
+brew "fnm"
 brew "pandoc"
 brew "pigz"
 brew "poppler"

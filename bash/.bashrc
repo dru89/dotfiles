@@ -58,23 +58,8 @@ command -v go > /dev/null && export PATH="$PATH:$(go env GOPATH)/bin"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-# nvm
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-# nvm end
-
-# pnpm
-if [[ "$(uname)" == "Darwin" ]]; then
-  export PNPM_HOME="$HOME/Library/pnpm"
-else
-  export PNPM_HOME="$HOME/.local/share/pnpm"
-fi
-case ":$PATH:" in
-  *":$PNPM_HOME:"*) ;;
-  *) export PATH="$PNPM_HOME:$PATH" ;;
-esac
-# pnpm end
+# fnm (node version manager)
+command -v fnm &>/dev/null && eval "$(fnm env --use-on-cd --resolve-engines=false --corepack-enabled)"
 
 [ -f "$HOME/.atuin/bin/env" ] && . "$HOME/.atuin/bin/env"
 # bash-preexec: required by atuin (and starship) for preexec/precmd hooks in bash.

@@ -28,7 +28,17 @@ done
 
 (cd && brew bundle)
 
-# Install global agent skills (requires npm/npx from brew bundle).
+# Set up fnm and install a default Node version.
+if command -v fnm > /dev/null; then
+  eval "$(fnm env)"
+  if ! fnm ls | grep -q default; then
+    fnm install --lts --corepack-enabled
+    fnm default lts-latest
+  fi
+  eval "$(fnm env)"
+fi
+
+# Install global agent skills (requires npm/npx from fnm).
 if command -v npx > /dev/null && [[ -f "$DOTFILES/skills.txt" ]]; then
   grep -v '^#' "$DOTFILES/skills.txt" | grep -v '^$' | while read -r skill; do
     npx skills add "$skill" -g -y

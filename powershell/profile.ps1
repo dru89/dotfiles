@@ -23,6 +23,11 @@ if (Get-Command atuin -ErrorAction SilentlyContinue) {
     }
 }
 
+# ── fnm (node version manager) ───────────────────────────────────────────────
+if (Get-Command fnm -ErrorAction SilentlyContinue) {
+    fnm env --use-on-cd --resolve-engines=false --corepack-enabled | Out-String | Invoke-Expression
+}
+
 # ── Environment ───────────────────────────────────────────────────────────────
 $env:RIPGREP_CONFIG_PATH = "$HOME\dotfiles\ripgrep\.config\ripgrep\.rgrc"
 if (-not $env:DEVELOPER_DIR) { $env:DEVELOPER_DIR = "$HOME\Developer" }

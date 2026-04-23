@@ -64,9 +64,11 @@ keymap("n", "<leader>ll", ":ll<CR>", opts)
 keymap("n", "<leader>z", ":bprevious<CR>", opts)
 keymap("n", "<leader>x", ":bnext<CR>", opts)
 
--- =============== INSERT MODE ESCAPE ==================
+-- =============== INSERT MODE ==================
 -- jk for <ESC>
 keymap("i", "jk", "<Esc>", opts)
+-- Alt-Backspace to delete previous word (vim's default <C-w> behavior)
+keymap("i", "<M-BS>", "<C-w>", opts)
 keymap("c", "jk", "<C-c>", opts)
 
 -- =============== SPLIT NAVIGATION ==================

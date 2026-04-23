@@ -3,22 +3,28 @@
 
 local opt = vim.opt
 
--- ==================== NVM NODE PATH =========================
--- Ensure nvm-managed Node is available for LSP servers
--- (nvm isn't initialized in non-interactive shells that Neovim spawns)
-local function setup_nvm_node_path()
-  if vim.fn.has("win32") == 1 then return end
-  local handle = io.popen("bash -c 'source ~/.nvm/nvm.sh && dirname $(nvm which default)' 2>/dev/null")
+-- ==================== FNM NODE PATH ==========================
+-- Ensure fnm-managed Node is available for LSP servers and formatters.
+-- When launched from a terminal, PATH already has the fnm node directory.
+-- When launched from a GUI (Raycast, Spotlight, Start Menu), we resolve it here.
+local function setup_fnm_node_path()
+  if vim.fn.executable("node") == 1 then return end
+  if vim.fn.executable("fnm") ~= 1 then return end
+  local is_win = vim.fn.has("win32") == 1
+  local null = is_win and "NUL" or "/dev/null"
+  local handle = io.popen('fnm exec --using=default -- node -e "console.log(process.execPath)" 2>' .. null)
   if handle then
     local result = handle:read("*a"):gsub("%s+$", "")
     handle:close()
-    if result ~= "" and vim.fn.isdirectory(result) == 1 then
-      vim.env.PATH = result .. ":" .. vim.env.PATH
+    local dir = vim.fn.fnamemodify(result, ":h")
+    if dir ~= "" and vim.fn.isdirectory(dir) == 1 then
+      local pathsep = is_win and ";" or ":"
+      vim.env.PATH = dir .. pathsep .. vim.env.PATH
     end
   end
 end
 
-setup_nvm_node_path()
+setup_fnm_node_path()
 
 -- ====================== WINDOWS COMPILER =======================
 -- Tell tree-sitter and other build tools to use gcc instead of cl.exe
