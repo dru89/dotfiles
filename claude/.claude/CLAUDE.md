@@ -142,6 +142,12 @@ npx skills add dru89/skills -s drafts      # install a specific skill
 npx skills add dru89/skills -g -y          # global, no prompts
 ```
 
+**Installing during development:** Skills are copied on install, not symlinked. When developing a skill locally, reinstall from the local repo path after changes:
+```bash
+npx skills add /path/to/local/repo -g -y
+```
+This works for any repo that contains a SKILL.md — the skills CLI auto-discovers skill directories.
+
 **Creating a new skill:** Each skill is a directory containing a `SKILL.md` with YAML frontmatter (`name`, `description`) and markdown instructions. Add the directory to the appropriate repo, commit, push. Install with `npx skills add`.
 
 When building a new skill that doesn't belong in an existing repo, decide: is it universal or work-specific? Public goes to `dru89/skills`, work-specific goes to the enterprise repo.
@@ -163,44 +169,68 @@ Most sessions don't need this. Check it when the task is machine-specific or whe
 You have access to a set of MCP tools (prefixed with `sift_`) for managing tasks and notes in my Obsidian vault. These tools use the Obsidian Tasks plugin with emoji format.
 
 ### Key tools
-- `sift_note` — Add freeform notes to daily notes or projects. Accepts `content`, optional `project`, `heading`, `changelogSummary`, and `date` (YYYY-MM-DD, defaults to today).
+- `sift_note` — Add freeform notes to daily notes, projects, or areas. Accepts `content`, optional `project`, `heading`, and `date` (YYYY-MM-DD, defaults to today).
+- `sift_subnote` — Create a separate note file linked to a project or area. Use for long-form content (design specs, meeting notes, reference material).
 - `sift_add` — Add a new task. Accepts `description`, optional `priority`, `due`, `scheduled`, `project`, and `date` (YYYY-MM-DD, defaults to today).
 - `sift_find` — Search for tasks. Returns file paths and line numbers.
 - `sift_done` — Mark a task complete by `file` and `line`. **Always call `sift_find` first, show the match to the user, and get confirmation before calling `sift_done`.**
 - `sift_mark` — Change task status (in_progress, on_hold, moved, cancelled, open, done) by `file` and `line`. Same confirmation flow as `sift_done`.
 - `sift_review` — Generate a review summary for a time period. Accepts `since`, `until`, or `days`.
 - `sift_list`, `sift_next`, `sift_summary` — Query tasks.
-- `sift_projects`, `sift_project_create`, `sift_project_path`, `sift_project_set` — Manage projects.
+- `sift_projects` — List projects and areas. Filter with `tag` or `kind` (project/area).
+- `sift_project_create`, `sift_project_path`, `sift_project_set` — Manage projects.
+- `sift_area_create`, `sift_area_path` — Manage areas.
+- `vault_search`, `vault_backlinks`, `vault_read`, `vault_outline` — Search and read vault content via Obsidian CLI.
+
+### Areas vs Projects
+The vault distinguishes between **areas** (persistent responsibilities, no finish line) and **projects** (finite work with deliverables). Areas live in `Areas/`, projects in `Projects/`.
+
+- **Areas**: Sift, doc-tools, teams-archive, sesh, transcribe, Netscope, Incident Management, etc. Use `type: area` in frontmatter. No status field.
+- **Projects**: Actionable work with a finish line. Use `type: project` with `status` and optionally `area` to link to a parent area. Name projects as actions: "Build X", "Write Y", "Evaluate Z".
+
+When creating something new, ask: does this have a finish line? If yes → project. If it's an ongoing tool, domain, or responsibility → area.
+
+### Bucket tags
+Every project and area should have one of these tags:
+- `#work` — Direct Disney deliverables: org proposals, incident reviews, architecture work, cross-team initiatives.
+- `#work-adjacent` — Tooling and infrastructure that supports work but isn't itself a work deliverable: agent skills, Obsidian plugins, internal CLI tools, productivity automation.
+- `#personal` — Side projects, blog posts, open source, anything unrelated to Disney.
 
 ### Writing content for Obsidian
-Use **Obsidian wiki link syntax** (`[[Page Name]]`) when referencing vault pages, projects, or people — not backticks or markdown links.
+Use **Obsidian wiki link syntax** (`[[Page Name]]`) when referencing vault pages, projects, areas, or people — not backticks or markdown links.
 
-## Logging Accomplishments
-My daily notes have an `## Accomplishments` section. Proactively log accomplishments when meaningful work is completed.
+## Logging Work
+My daily notes have a `## Work Log` section. Proactively log meaningful work when it's completed.
 
 ### What counts
-- Completing a coding task (bug fix, feature, refactor)
-- Processing or transforming data
+- Shipping a feature, release, or tool
+- Completing a bug fix or refactor that was the main task
 - Writing or editing a document, design doc, or proposal
-- Setting up infrastructure, tooling, or configuration
-- Meaningful research that produced findings
-- Any work product I'd want to remember later
+- Meaningful research that produced findings or a decision
+- Conversations or reviews that moved something forward (with the takeaway, not just "reviewed X")
+
+The test: would I mention this in standup?
 
 ### What does not count
+- Agent workflow housekeeping: creating project files, adding tags, archiving messages, updating CLAUDE.md
+- Individual sub-tasks of a larger effort (log the release, not each bug fix)
+- Installing or configuring tools
 - Simple Q&A or explanations
-- Failed attempts that didn't produce anything useful
-- Trivial file reads or searches
-- Small corrections or typo fixes
+- Failed attempts that didn't produce anything
+- Trivial file reads, searches, or typo fixes
 
 ### How to log
-Use `sift_note` with `heading: "## Accomplishments"`:
+Use `sift_note` with `heading: "## Work Log"`:
 ```
-sift_note(content: "- Built JWT auth middleware for the API gateway", heading: "## Accomplishments")
+sift_note(content: "- Built JWT auth middleware for the API gateway", heading: "## Work Log")
 ```
-One line, concise but specific. Include project context with wiki links when relevant.
+One line, concise but specific. Include project context with wiki links and people with `[[Name]]` when relevant.
+
+### Consolidation
+If there are already entries for the same project today, update the existing entry rather than adding a new line. A day's work on one project should be 1-2 entries, not a commit log.
 
 ### When to log
-- **Small/routine completions:** Log automatically without asking.
+- **Routine completions:** Log automatically without asking.
 - **Larger or ambiguous work:** Ask first.
 - **At session end:** If meaningful work was done and nothing was logged yet, ask proactively.
 

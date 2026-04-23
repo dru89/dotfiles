@@ -40,6 +40,7 @@ if sift project path -- "$NAME" > /dev/null 2>&1; then
 else
   sift project create -- "$NAME"
   sift project set --status active -- "$NAME"
+  sift note --project "$NAME" --heading "## Overview" "Writing project: \`~/Writing/$NAME/\`"
 fi
 
 # Write .siftrc.json
