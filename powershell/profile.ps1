@@ -5,6 +5,11 @@
 Set-PSReadLineOption -EditMode Emacs
 
 # ── Starship prompt ───────────────────────────────────────────────────────────
+# Point directly at dotfiles to avoid os error 448 when following symlinks
+# across OneDrive mount boundaries in SSH sessions.
+if (-not $env:STARSHIP_CONFIG) {
+    $env:STARSHIP_CONFIG = "$HOME\dotfiles\starship\.config\starship.toml"
+}
 if (Get-Command starship -ErrorAction SilentlyContinue) {
     Invoke-Expression (&starship init powershell)
 }
@@ -19,7 +24,7 @@ if (Get-Command atuin -ErrorAction SilentlyContinue) {
 }
 
 # ── Environment ───────────────────────────────────────────────────────────────
-$env:RIPGREP_CONFIG_PATH = "$HOME\.config\ripgrep\.rgrc"
+$env:RIPGREP_CONFIG_PATH = "$HOME\dotfiles\ripgrep\.config\ripgrep\.rgrc"
 if (-not $env:DEVELOPER_DIR) { $env:DEVELOPER_DIR = "$HOME\Developer" }
 
 # ── Navigation ────────────────────────────────────────────────────────────────

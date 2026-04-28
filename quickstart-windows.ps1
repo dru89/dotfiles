@@ -84,32 +84,68 @@ function New-SafeJunction {
     Write-OK (Split-Path $LinkPath -Leaf)
 }
 
-# ── Config file copy helper ───────────────────────────────────────────────────
+# ── Stub config helper ────────────────────────────────────────────────────────
 #
-# Copies a dotfile config to its destination. Safe to re-run — overwrites the
-# destination each time so it stays in sync with dotfiles after a git pull.
-# If a stale symlink exists at the destination (from a prior quickstart run),
-# it is removed and replaced with a real copy.
+# Writes a managed stub file at $Path. On re-run:
+#   - Content matches → skip (already correct)
+#   - Stale symlink → replace silently (migrating from earlier quickstart runs)
+#   - Different real content → show a diff and ask before overwriting
+#
+# The "different content" case is how we surface tools that wrote directly to
+# the config file (git credential helpers, SDK installers, etc.) so the user
+# can migrate those additions to the appropriate escape hatch before we proceed.
 
-function Copy-DotfileConfig {
+function Write-StubConfig {
     param(
-        [Parameter(Mandatory)][string]$Source,
-        [Parameter(Mandatory)][string]$Destination
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Content,
+        [string]$Name = (Split-Path $Path -Leaf)
     )
 
-    if (Test-Path $Destination -ErrorAction SilentlyContinue) {
-        $item = Get-Item $Destination -Force -ErrorAction SilentlyContinue
+    if (Test-Path $Path -ErrorAction SilentlyContinue) {
+        $item = Get-Item $Path -Force -ErrorAction SilentlyContinue
+
         if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            Remove-Item $Destination -Force
-            Write-Info "Replaced symlink → copy: $(Split-Path $Destination -Leaf)"
+            Remove-Item $Path -Force
+            Write-Info "Replaced symlink: $Name"
+        } else {
+            # Normalize line endings before comparing so CRLF/LF differences don't
+            # trigger a false "unexpected content" prompt.
+            $existing = (Get-Content $Path -Raw) -replace "`r`n", "`n"
+            $expected = $Content            -replace "`r`n", "`n"
+            if ($existing -eq $expected) {
+                Write-Skip $Name
+                return
+            }
+
+            Write-Host ""
+            Write-Host "  WARN  $Path has unexpected content." -ForegroundColor Yellow
+            Write-Host "        Something may have written to it directly (credential helper," -ForegroundColor DarkYellow
+            Write-Host "        SDK installer, etc.). Move any additions to the appropriate" -ForegroundColor DarkYellow
+            Write-Host "        escape hatch before overwriting." -ForegroundColor DarkYellow
+            Write-Host "        Diff (existing → stub):" -ForegroundColor DarkGray
+            $tmp = [IO.Path]::GetTempFileName()
+            try {
+                Set-Content -Path $tmp -Value $Content -Encoding UTF8
+                git diff --no-index -- $Path $tmp 2>&1 |
+                    ForEach-Object { Write-Host "          $_" -ForegroundColor DarkGray }
+            } finally {
+                Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            }
+            Write-Host ""
+            $ans = Read-Host "  Overwrite with stub? [y/N]"
+            if ($ans -notmatch '^[Yy]') {
+                Write-Warn "Skipped $Name — review manually"
+                return
+            }
         }
     }
 
-    $parent = Split-Path $Destination -Parent
+    $parent = Split-Path $Path -Parent
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
 
-    Copy-Item -Path $Source -Destination $Destination -Force
-    Write-OK (Split-Path $Destination -Leaf)
+    Set-Content -Path $Path -Value $Content -Encoding UTF8
+    Write-OK $Name
 }
 
 # ── Package install helpers ───────────────────────────────────────────────────
@@ -141,9 +177,9 @@ Write-Host "  ══════════════════════
 Write-Host "  Safe to re-run. Checks state before every action."
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Developer Mode is no longer required. File configs are copied rather than
-# symlinked. The only reparse point created is a directory junction for Neovim,
-# and junctions do not require Developer Mode.
+# Developer Mode is not required. The only reparse point created is a directory
+# junction for Neovim; junctions do not require Developer Mode. All other
+# configs are managed via stubs or env vars, not symlinks.
 
 # ═════════════════════════════════════════════════════════════════════════════
 Write-Step "Core tools (winget)"
@@ -258,24 +294,34 @@ Install a Nerd Font if you haven't:
 # ═════════════════════════════════════════════════════════════════════════════
 Write-Step "Config files"
 #
-# File configs are copied rather than symlinked. Symlinks to files fail with
-# os error 448 in Windows SSH sessions when paths cross mount points (e.g.
-# OneDrive). Re-running this script keeps copies in sync after a dotfiles pull.
-# The Neovim directory uses a junction, which Windows handles differently and
-# does not trigger the mount-point restriction.
+# Strategy per tool:
+#   git / tig   — stub files that include/source from dotfiles. Tools like
+#                 credential helpers can still write to the stub without
+#                 touching the tracked dotfiles config.
+#   starship    — STARSHIP_CONFIG env var set in profile.ps1 points directly
+#                 at dotfiles; no file to manage here.
+#   ripgrep     — RIPGREP_CONFIG_PATH env var in profile.ps1, same approach.
+#   neovim      — directory junction (transparent to tools; not subject to the
+#                 mount-point restriction that affects file symlinks).
+#   profile     — stub that dot-sources from dotfiles (handled below).
 
-# Git
-try { Copy-DotfileConfig "$dotfilesDir\git\.gitconfig"               "$HOME\.gitconfig"               } catch { Write-Warn $_ }
-try { Copy-DotfileConfig "$dotfilesDir\git\.gitignore_global"        "$HOME\.gitignore_global"        } catch { Write-Warn $_ }
-try { Copy-DotfileConfig "$dotfilesDir\git\.tigrc"                   "$HOME\.tigrc"                   } catch { Write-Warn $_ }
+$dotfilesDirFwd = $dotfilesDir.Replace('\', '/')
 
-# Starship
-New-Item -ItemType Directory -Path "$HOME\.config" -Force | Out-Null
-try { Copy-DotfileConfig "$dotfilesDir\starship\.config\starship.toml" "$HOME\.config\starship.toml"  } catch { Write-Warn $_ }
+# .gitconfig — stub includes the dotfiles config and overrides core.excludesfile
+# so that .gitignore_global doesn't need to exist at ~/  (it lives in dotfiles).
+$gitconfigStub = @"
+; Managed by quickstart-windows.ps1 — do not edit directly.
+; Add machine-specific settings to ~/.local_gitconfig (loaded via the include below).
+[include]
+	path = $dotfilesDirFwd/git/.gitconfig
+[core]
+	excludesfile = $dotfilesDirFwd/git/.gitignore_global
+"@
+try { Write-StubConfig "$HOME\.gitconfig" $gitconfigStub } catch { Write-Warn $_ }
 
-# ripgrep
-New-Item -ItemType Directory -Path "$HOME\.config\ripgrep" -Force | Out-Null
-try { Copy-DotfileConfig "$dotfilesDir\ripgrep\.config\ripgrep\.rgrc"  "$HOME\.config\ripgrep\.rgrc"  } catch { Write-Warn $_ }
+# .tigrc — stub sources the dotfiles config
+$tigrcStub = "source $dotfilesDirFwd/git/.tigrc"
+try { Write-StubConfig "$HOME\.tigrc" $tigrcStub } catch { Write-Warn $_ }
 
 # Neovim — directory junction (transparent to tools, not affected by the symlink restriction)
 try { New-SafeJunction "$env:LOCALAPPDATA\nvim" "$dotfilesDir\neovim\.config\nvim" } catch { Write-Warn $_ }
