@@ -42,20 +42,23 @@ function Add-ManualStep([string]$msg) {
     Write-Host "  TODO  $msg" -ForegroundColor Yellow
 }
 
-# ── Symlink / junction helper ─────────────────────────────────────────────────
+# ── Junction helper ───────────────────────────────────────────────────────────
 #
-# Creates a symlink (or junction for directories) at $LinkPath pointing to
-# $TargetPath. Behavior:
-#   - Already a symlink/junction to the right target → skip (noop)
-#   - Symlink/junction to a different target → throw
+# Creates a directory junction at $LinkPath pointing to $TargetPath.
+# Used only for the Neovim config directory; file configs are copied instead.
+# (Symlinks to files fail with os error 448 in Windows SSH sessions when paths
+# cross mount points such as OneDrive boundaries.)
+#
+# Behavior:
+#   - Already a junction to the right target → skip (noop)
+#   - Junction to a different target → throw
 #   - Real file or directory → throw (caller decides how to handle)
 #   - Does not exist → create
 
-function New-SafeLink {
+function New-SafeJunction {
     param(
         [Parameter(Mandatory)][string]$LinkPath,
-        [Parameter(Mandatory)][string]$TargetPath,
-        [switch]$Junction
+        [Parameter(Mandatory)][string]$TargetPath
     )
 
     if (Test-Path $LinkPath -ErrorAction SilentlyContinue) {
@@ -70,7 +73,6 @@ function New-SafeLink {
             throw "$(Split-Path $LinkPath -Leaf) already points to '$($item.Target)' — remove it first."
         }
 
-        # Real file or directory.
         $kind = if ($item.PSIsContainer) { 'directory' } else { 'file' }
         throw "A real $kind already exists at $LinkPath."
     }
@@ -78,12 +80,36 @@ function New-SafeLink {
     $parent = Split-Path $LinkPath -Parent
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
 
-    if ($Junction) {
-        New-Item -ItemType Junction      -Path $LinkPath -Target $TargetPath | Out-Null
-    } else {
-        New-Item -ItemType SymbolicLink  -Path $LinkPath -Target $TargetPath | Out-Null
-    }
+    New-Item -ItemType Junction -Path $LinkPath -Target $TargetPath | Out-Null
     Write-OK (Split-Path $LinkPath -Leaf)
+}
+
+# ── Config file copy helper ───────────────────────────────────────────────────
+#
+# Copies a dotfile config to its destination. Safe to re-run — overwrites the
+# destination each time so it stays in sync with dotfiles after a git pull.
+# If a stale symlink exists at the destination (from a prior quickstart run),
+# it is removed and replaced with a real copy.
+
+function Copy-DotfileConfig {
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination
+    )
+
+    if (Test-Path $Destination -ErrorAction SilentlyContinue) {
+        $item = Get-Item $Destination -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            Remove-Item $Destination -Force
+            Write-Info "Replaced symlink → copy: $(Split-Path $Destination -Leaf)"
+        }
+    }
+
+    $parent = Split-Path $Destination -Parent
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+
+    Copy-Item -Path $Source -Destination $Destination -Force
+    Write-OK (Split-Path $Destination -Leaf)
 }
 
 # ── Package install helpers ───────────────────────────────────────────────────
@@ -115,24 +141,9 @@ Write-Host "  ══════════════════════
 Write-Host "  Safe to re-run. Checks state before every action."
 
 # ═════════════════════════════════════════════════════════════════════════════
-Write-Step "Developer Mode"
-
-$devModeKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
-$devModeVal = (Get-ItemProperty $devModeKey -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense
-
-if ($devModeVal -eq 1) {
-    Write-OK "Developer Mode is enabled"
-} else {
-    Write-Host "  FAIL  Developer Mode is OFF. Symlink creation will fail without it." -ForegroundColor Red
-    Add-ManualStep "Enable Developer Mode: Settings → System → For Developers → Developer Mode → On"
-
-    $ans = Read-Host "  Continue anyway (symlink steps will likely fail)? [y/N]"
-    if ($ans -notmatch '^[Yy]') {
-        Write-Host ""
-        Write-Host "Re-run after enabling Developer Mode." -ForegroundColor Yellow
-        exit 1
-    }
-}
+# Developer Mode is no longer required. File configs are copied rather than
+# symlinked. The only reparse point created is a directory junction for Neovim,
+# and junctions do not require Developer Mode.
 
 # ═════════════════════════════════════════════════════════════════════════════
 Write-Step "Core tools (winget)"
@@ -245,70 +256,85 @@ Install a Nerd Font if you haven't:
 "@
 
 # ═════════════════════════════════════════════════════════════════════════════
-Write-Step "Symlinks"
+Write-Step "Config files"
+#
+# File configs are copied rather than symlinked. Symlinks to files fail with
+# os error 448 in Windows SSH sessions when paths cross mount points (e.g.
+# OneDrive). Re-running this script keeps copies in sync after a dotfiles pull.
+# The Neovim directory uses a junction, which Windows handles differently and
+# does not trigger the mount-point restriction.
 
 # Git
-try { New-SafeLink "$HOME\.gitconfig"        "$dotfilesDir\git\.gitconfig"               } catch { Write-Warn $_ }
-try { New-SafeLink "$HOME\.gitignore_global" "$dotfilesDir\git\.gitignore_global"        } catch { Write-Warn $_ }
-try { New-SafeLink "$HOME\.tigrc"            "$dotfilesDir\git\.tigrc"                   } catch { Write-Warn $_ }
+try { Copy-DotfileConfig "$dotfilesDir\git\.gitconfig"               "$HOME\.gitconfig"               } catch { Write-Warn $_ }
+try { Copy-DotfileConfig "$dotfilesDir\git\.gitignore_global"        "$HOME\.gitignore_global"        } catch { Write-Warn $_ }
+try { Copy-DotfileConfig "$dotfilesDir\git\.tigrc"                   "$HOME\.tigrc"                   } catch { Write-Warn $_ }
 
 # Starship
 New-Item -ItemType Directory -Path "$HOME\.config" -Force | Out-Null
-try { New-SafeLink "$HOME\.config\starship.toml"   "$dotfilesDir\starship\.config\starship.toml" } catch { Write-Warn $_ }
+try { Copy-DotfileConfig "$dotfilesDir\starship\.config\starship.toml" "$HOME\.config\starship.toml"  } catch { Write-Warn $_ }
 
 # ripgrep
 New-Item -ItemType Directory -Path "$HOME\.config\ripgrep" -Force | Out-Null
-try { New-SafeLink "$HOME\.config\ripgrep\.rgrc"   "$dotfilesDir\ripgrep\.config\ripgrep\.rgrc"  } catch { Write-Warn $_ }
+try { Copy-DotfileConfig "$dotfilesDir\ripgrep\.config\ripgrep\.rgrc"  "$HOME\.config\ripgrep\.rgrc"  } catch { Write-Warn $_ }
 
-# Neovim (junction — directory link, no Developer Mode needed)
-try { New-SafeLink "$env:LOCALAPPDATA\nvim"        "$dotfilesDir\neovim\.config\nvim" -Junction   } catch { Write-Warn $_ }
+# Neovim — directory junction (transparent to tools, not affected by the symlink restriction)
+try { New-SafeJunction "$env:LOCALAPPDATA\nvim" "$dotfilesDir\neovim\.config\nvim" } catch { Write-Warn $_ }
 
-# PowerShell profile — handled separately because the existing file may need migration
-$profileTarget  = "$dotfilesDir\powershell\profile.ps1"
+# PowerShell profile — write a stub that dot-sources from dotfiles so that
+# profile changes take effect immediately after a dotfiles pull without a
+# re-run of this script.
+$profileSource  = "$dotfilesDir\powershell\profile.ps1"
 $profileDir     = Split-Path $PROFILE -Parent
 $localProfile   = Join-Path $profileDir 'profile.local.ps1'
+$profileStub    = @"
+#Requires -Version 7
+# Auto-generated by quickstart-windows.ps1 — do not edit directly.
+# Machine-specific config goes in: $localProfile
+`$_dotfilesProfile = "$profileSource"
+if (Test-Path `$_dotfilesProfile) { . `$_dotfilesProfile }
+Remove-Variable _dotfilesProfile
+"@
 
+$needsWrite = $true
 if (Test-Path $PROFILE -ErrorAction SilentlyContinue) {
     $item = Get-Item $PROFILE -Force -ErrorAction SilentlyContinue
     $isReparse = $item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
 
-    if ($isReparse -and $item.Target -eq $profileTarget) {
-        Write-Skip "PowerShell profile"
-    } elseif ($isReparse) {
-        Write-Warn "Profile is a symlink to '$($item.Target)' — expected '$profileTarget'. Remove and re-run."
+    if ($isReparse) {
+        # Stale symlink from a prior run — replace with stub.
+        Remove-Item $PROFILE -Force
+        Write-Info "Replaced profile symlink with stub"
+    } elseif ((Get-Content $PROFILE -Raw) -eq $profileStub) {
+        Write-Skip "PowerShell profile stub"
+        $needsWrite = $false
     } else {
-        # Real file. Show contents and ask whether to replace it.
+        # Real file with different content. Show it and ask.
         Write-Host ""
-        Write-Host "  WARN  $PROFILE is a real file (not a symlink)." -ForegroundColor Yellow
-        Write-Host "        The tracked profile will replace it. Machine-specific lines" -ForegroundColor DarkYellow
-        Write-Host "        (env vars, tool completions, work paths) should move to:" -ForegroundColor DarkYellow
+        Write-Host "  WARN  $PROFILE is a real file (not a stub)." -ForegroundColor Yellow
+        Write-Host "        It will be replaced with a stub that sources dotfiles." -ForegroundColor DarkYellow
+        Write-Host "        Machine-specific lines should move to:" -ForegroundColor DarkYellow
         Write-Host "        $localProfile" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "        Current profile:" -ForegroundColor DarkGray
         Get-Content $PROFILE | ForEach-Object { Write-Host "          $_" -ForegroundColor DarkGray }
         Write-Host ""
 
-        $ans = Read-Host "  Replace with symlink now? [y/N]"
+        $ans = Read-Host "  Replace with stub now? [y/N]"
         if ($ans -match '^[Yy]') {
             Remove-Item $PROFILE -Force
-            New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-            New-Item -ItemType SymbolicLink -Path $PROFILE -Target $profileTarget | Out-Null
-            Write-OK "Profile linked"
-            if (-not (Test-Path $localProfile)) {
-                Add-ManualStep "Create $localProfile with your machine-specific config (DEVBOX_HOST, tool completions, etc.) — the tracked profile sources it automatically"
-            }
         } else {
-            Add-ManualStep "Replace $PROFILE with a symlink to $profileTarget (after moving machine-specific lines to $localProfile)"
+            Add-ManualStep "Replace $PROFILE with a stub that sources $profileSource (after moving machine-specific lines to $localProfile)"
+            $needsWrite = $false
         }
     }
-} else {
-    try {
-        New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-        New-Item -ItemType SymbolicLink -Path $PROFILE -Target $profileTarget | Out-Null
-        Write-OK "PowerShell profile linked"
+}
+
+if ($needsWrite) {
+    New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+    Set-Content -Path $PROFILE -Value $profileStub -Encoding UTF8
+    Write-OK "PowerShell profile stub written"
+    if (-not (Test-Path $localProfile)) {
         Add-ManualStep "Create $localProfile with machine-specific config — the tracked profile sources it automatically if it exists"
-    } catch {
-        Write-Warn "Could not create profile symlink: $_"
     }
 }
 

@@ -10,8 +10,12 @@ if (Get-Command starship -ErrorAction SilentlyContinue) {
 }
 
 # ── Atuin shell history ───────────────────────────────────────────────────────
+# Skip in SSH sessions: atuin's init sets stdout encoding in a way that fails
+# when stdout isn't a proper Windows console (os error from OpenSSH sessions).
 if (Get-Command atuin -ErrorAction SilentlyContinue) {
-    Invoke-Expression ((&atuin init powershell) -join "`n")
+    if (-not ($env:SSH_CLIENT -or $env:SSH_CONNECTION)) {
+        Invoke-Expression ((&atuin init powershell) -join "`n")
+    }
 }
 
 # ── Environment ───────────────────────────────────────────────────────────────
