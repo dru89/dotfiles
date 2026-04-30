@@ -84,9 +84,9 @@ If a diff contains work-specific or machine-specific changes to a tracked file, 
 
 All repo cloning, organization, and navigation functions live in `shell/.developer`. The file has a detailed header comment describing the layout conventions.
 
-- `clone <url>` — clones to `$DEVELOPER_DIR/<host>/<org>/<repo>`, creating the directory structure automatically. Detects GitHub orgs and GitLab groups.
-- `reorg [--apply]` — audits repos under `$DEVELOPER_DIR` and moves any whose path doesn't match their origin remote. Dry run by default.
-- `cdr [query]` / `cdw [query]` — fuzzy directory picker for repos (`$DEVELOPER_DIR`) and writing projects (`~/Writing`). Frecency-ranked, with query prefill and single-match auto-cd.
+- `clone <url>` — clones to `$DEVELOPER_DIR/<host>/<org>/<repo>`, creating the directory structure automatically. Detects GitHub orgs and GitLab groups. Implemented as a script in `~/bin/`; the shell function wraps it and adds `cd`. Prints the target path to stdout, so agents can capture it with `$(clone <url>)`.
+- `reorg [--apply]` — audits repos under `$DEVELOPER_DIR` and moves any whose path doesn't match their origin remote. Dry run by default. Shell function only (uses interactive prompts).
+- `cdr [query]` / `cdw [query]` — fuzzy directory picker for repos (`$DEVELOPER_DIR`) and writing projects (`~/Writing`). Frecency-ranked, with query prefill and single-match auto-cd. Shell function only (interactive).
 - `_cdfzf` — shared implementation for `cdr`/`cdw`. Maintains a frecency history at `~/.local/share/cdfzf/history`.
 
 ## Scripts in bin/
@@ -95,6 +95,8 @@ All repo cloning, organization, and navigation functions live in `shell/.develop
 
 Tracked scripts:
 
+- `clone [--wt] [git-flags] <url>` — clones to `$DEVELOPER_DIR/<host>/<org>/<repo>`. Prints the target path to stdout; all progress goes to stderr. The shell function in `.developer` wraps this and adds `cd` + frecency recording. Use the script directly in non-interactive contexts.
+- `convert-wt` — converts the current standard clone to a worktree container. Prints the resulting worktree path to stdout. Same shell wrapper pattern as `clone`.
 - `find-up <pattern>` — walks up the directory tree to find a file matching a glob. Standalone version of the `findup` shell function.
 - `newdoc <name>` — creates a writing project at `~/Writing/<name>/` with git, reference dir, and Obsidian project link. Records to cdfzf frecency history.
 - `cleanup-branches` — deletes local git branches whose last commit is older than 3 weeks. Protects main, master, and the current branch.

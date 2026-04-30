@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Convert the current standard clone to a worktree container.
+# Prints the resulting worktree path to stdout on success.
+# All progress output goes to stderr.
+#
+# Usage: convert-wt
+#
+# Must be run from inside a standard clone with a clean working tree.
+# After conversion the original repo is backed up with a .backup.<pid> suffix.
+
+_wt_container_root() {
+    local git_common_dir
+    git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+    [[ "$git_common_dir" != /* ]] && \
+        git_common_dir="$(cd "$(git rev-parse --show-toplevel 2>/dev/null)/$git_common_dir" 2>/dev/null && pwd)"
+    if [[ "$(basename "$git_common_dir")" == ".bare" ]]; then
+        dirname "$git_common_dir"
+        return 0
+    fi
+    return 1
+}
+
+_is_worktree_repo() {
+    _wt_container_root &>/dev/null
+}
+
+main() {
+    local toplevel
+    toplevel=$(git rev-parse --show-toplevel 2>/dev/null)
+    if [[ -z "$toplevel" ]]; then
+        echo "Not inside a git repository." >&2
+        exit 1
+    fi
+
+    if _is_worktree_repo; then
+        echo "Already a worktree container." >&2
+        exit 1
+    fi
+
+    if [[ ! -d "$toplevel/.git" ]]; then
+        echo "Expected .git directory at $toplevel/.git, found something else." >&2
+        exit 1
+    fi
+
+    if ! git -C "$toplevel" diff-index --quiet HEAD -- 2>/dev/null; then
+        echo "Working tree has uncommitted changes. Commit or stash first." >&2
+        exit 1
+    fi
+    if [[ -n "$(git -C "$toplevel" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
+        echo "Working tree has untracked files. Commit or remove them first." >&2
+        exit 1
+    fi
+
+    local branch
+    branch=$(git -C "$toplevel" branch --show-current 2>/dev/null)
+    if [[ -z "$branch" ]]; then
+        echo "HEAD is detached. Check out a branch first." >&2
+        exit 1
+    fi
+
+    echo "Converting $toplevel to worktree container..." >&2
+    echo "Current branch: $branch" >&2
+
+    local tmpdir
+    tmpdir=$(mktemp -d "${toplevel}.convert.XXXX")
+
+    if ! git clone --bare "$toplevel" "$tmpdir/.bare" >&2; then
+        echo "Bare clone failed." >&2
+        rm -rf "$tmpdir"
+        exit 1
+    fi
+
+    echo "gitdir: .bare" > "$tmpdir/.git"
+
+    local backup="${toplevel}.backup.$$"
+    mv "$toplevel" "$backup"
+    mv "$tmpdir" "$toplevel"
+
+    if ! git -C "$toplevel" worktree add "$branch" "$branch" 2>/dev/null; then
+        git -C "$toplevel" worktree add "$branch" "origin/$branch" --checkout 2>/dev/null
+    fi
+
+    if [[ ! -d "$toplevel/$branch" ]]; then
+        echo "Failed to create worktree for branch '$branch'. Restoring backup." >&2
+        rm -rf "$toplevel"
+        mv "$backup" "$toplevel"
+        exit 1
+    fi
+
+    echo "Converted. Old repo backed up to: $(basename "$backup")" >&2
+    echo "  Container: $toplevel" >&2
+    echo "  Worktree:  $toplevel/$branch" >&2
+    echo "" >&2
+    echo "Verify everything works, then remove the backup:" >&2
+    echo "  rm -rf \"$backup\"" >&2
+
+    echo "$toplevel/$branch"
+}
+
+main "$@"

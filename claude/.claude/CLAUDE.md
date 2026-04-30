@@ -97,12 +97,12 @@ Examples:
 - `https://github.twdcgrid.net/cgi-client/cgi-web` → `~/Developer/github.twdcgrid.net/cgi-client/cgi-web/main/` (worktree, working in main)
 - A repo with no remote → `~/Developer/local/<repo>`
 
-When asked to clone a repo (non-ephemeral work), use `clone <url>` for a standard clone or `clone --wt <url>` for a worktree container. When searching for an existing local repo, look under `~/Developer/<domain>/<org>/<repo>` — if it's a worktree container, the code is one level deeper in a branch-named subdirectory. For throwaway exploration, `/tmp` is fine.
+When asked to clone a repo (non-ephemeral work), use `clone <url>` for a standard clone or `clone --wt <url>` for a worktree container. `clone` is a script in `~/bin/` — available in non-interactive shells and to agents. It prints the target path to stdout; all progress goes to stderr. When searching for an existing local repo, look under `~/Developer/<domain>/<org>/<repo>` — if it's a worktree container, the code is one level deeper in a branch-named subdirectory. For throwaway exploration, `/tmp` is fine.
 
 The `reorg` function (in `shell/.developer`) audits all repos under `~/Developer` and moves any whose filesystem path doesn't match their origin remote. Run `reorg` for a dry run, `reorg --apply` to execute moves interactively.
 
 ### Worktree management with Worktrunk
-Worktrees are managed by [Worktrunk](https://worktrunk.dev) (`wt` command), not custom shell functions. The `clone --wt` and `convert-wt` functions in `shell/.developer` handle creating the bare-container layout; Worktrunk handles everything after that.
+Worktrees are managed by [Worktrunk](https://worktrunk.dev) (`wt` command), not custom shell functions. The `clone --wt` and `convert-wt` scripts in `~/bin/` handle creating the bare-container layout; Worktrunk handles everything after that.
 
 Worktrunk config is at `~/.config/worktrunk/config.toml`. The `worktree-path` template is set to `{{ repo_path }}/../{{ branch | sanitize }}`, which places worktrees as siblings inside the bare container — matching the layout described above.
 
