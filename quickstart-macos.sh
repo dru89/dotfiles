@@ -7,6 +7,13 @@ command -v stow > /dev/null || brew install stow
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Set default shell to the Homebrew-managed bash.
+BASH_PATH="$(brew --prefix)/bin/bash"
+if [[ "$SHELL" != "$BASH_PATH" ]]; then
+    grep -qF "$BASH_PATH" /etc/shells || echo "$BASH_PATH" | sudo tee -a /etc/shells
+    chsh -s "$BASH_PATH"
+fi
+
 # Pre-create directories so stow creates per-file symlinks, not directory symlinks.
 mkdir -p "$HOME/bin"
 mkdir -p "$HOME/.claude"

@@ -824,7 +824,7 @@ _cdfzf() {
         local rel="${repo_dir#$root/}"
         entries+=("$rel")
         local mt
-        mt=$(stat -f %m "$gd" 2>/dev/null || stat -c %Y "$gd" 2>/dev/null)
+        mt=$(stat -c %Y "$gd" 2>/dev/null || stat -f %m "$gd" 2>/dev/null || echo 0)
         mtimes+=("$mt")
     done
 
@@ -848,17 +848,19 @@ _cdfzf() {
         [[ -z "$bd" ]] && continue
         local container_dir
         container_dir=$(dirname "$bd")
-        # List worktrees using git. Skip the bare root entry.
+        # List worktrees using git porcelain format (stable across git versions).
+        # Only "worktree /path" lines are paths; HEAD/branch/gitdir/blank lines are skipped.
         while IFS= read -r wt_line; do
-            local wt_path="${wt_line%% *}"
+            [[ "$wt_line" != worktree\ * ]] && continue
+            local wt_path="${wt_line#worktree }"
             [[ "$wt_path" == "$container_dir" ]] && continue
             [[ -d "$wt_path" ]] || continue
             local rel="${wt_path#$root/}"
             entries+=("$rel")
             local mt
-            mt=$(stat -f %m "$wt_path/.git" 2>/dev/null || stat -c %Y "$wt_path/.git" 2>/dev/null || echo 0)
+            mt=$(stat -c %Y "$wt_path/.git" 2>/dev/null || stat -f %m "$wt_path/.git" 2>/dev/null || echo 0)
             mtimes+=("$mt")
-        done < <(git -C "$container_dir" worktree list 2>/dev/null)
+        done < <(git -C "$container_dir" worktree list --porcelain 2>/dev/null)
     done
 
     [[ ${#entries[@]} -eq 0 ]] && return

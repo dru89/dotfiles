@@ -12,9 +12,10 @@ These dotfiles run on multiple machines. Changes must work everywhere or be guar
 - **Devboxes** — ephemeral Linux VMs, usually Debian/Ubuntu
 - **WSL** — Windows Subsystem for Linux (Ubuntu)
 
-Two quickstart scripts handle installation:
-- `quickstart.sh` — macOS: installs Homebrew, stow, stows all topics, runs `brew bundle`
-- `quickstart-devbox.sh` — Linux: installs stow via apt, stows only the Linux-compatible subset (bash, shell, git, starship, ripgrep, curl, atuin, bin)
+Three quickstart scripts handle installation:
+- `quickstart-macos.sh` — macOS: installs Homebrew, stow, stows all topics, runs `brew bundle`
+- `quickstart-arch.sh` — Arch Linux: installs packages via pacman + paru, stows all Linux-compatible topics
+- `quickstart-devbox.sh` — ephemeral Linux VMs: installs stow via apt, stows only the minimal subset (bash, shell, git, starship, ripgrep, curl, atuin, bin)
 
 ## Repo layout
 
@@ -28,7 +29,7 @@ ghostty/     → ~/.config/ghostty/        Terminal keybinds
 git/         → ~/.gitconfig, etc.        Git, delta, tig
 homebrew/    → ~/Brewfile                Shared Homebrew packages
 neovim/      → ~/.config/nvim/           Full Lua neovim config
-packages/    (not stowed)                Arch package list for ds9
+packages/    (not stowed)                Arch package lists: arch.txt (pacman), arch-aur.txt (AUR)
 ripgrep/     → ~/.config/ripgrep/.rgrc   Smart-case default
 shell/       → ~/.aliases, ~/.developer   General shell utils + developer dir management
 skills.txt   (not stowed)                Agent skills installed via npx skills add

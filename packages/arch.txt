@@ -1,3 +1,6 @@
+# Arch Linux packages — installed via pacman.
+# See arch-aur.txt for AUR packages.
+
 # Core utilities
 stow
 tmux
@@ -5,10 +8,56 @@ which
 less
 man-db
 base-devel
-tree-sitter-cli
 
-# Languages (for neovim LSP servers)
-go
+# Terminal
+ghostty
+
+# Shell
+bash-completion
+fzf
+starship
+atuin
+
+# Development
+git
+neovim
+lua
 nodejs
 npm
+go
 rust
+
+# Git tools
+git-delta
+lazygit
+tig
+github-cli
+
+# File utilities
+ripgrep
+tree
+wget
+curl
+pigz
+wdiff
+
+# Data/formats
+jq
+pandoc
+poppler
+
+# Media
+ffmpeg
+imagemagick
+
+# Network/security
+gnupg
+mkcert
+nmap
+openbsd-netcat
+
+# System tools
+psmisc
+graphviz
+task
+httpie

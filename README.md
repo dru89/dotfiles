@@ -17,5 +17,5 @@ stow --target $HOME bash # or some other package
 Or just use the quickstart:
 
 ```sh
-./quickstart.sh
+./quickstart-macos.sh
 ```

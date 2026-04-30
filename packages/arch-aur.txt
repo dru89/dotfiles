@@ -1,0 +1,13 @@
+# Arch Linux AUR packages — installed via paru.
+# See arch.txt for official repo packages.
+
+# Shell tools
+gum
+
+# Development
+pyenv
+yq
+tree-sitter-cli
+
+# Media
+whisper.cpp
