@@ -43,6 +43,21 @@ Avoid common AI writing patterns. These rules apply to all output, conversationa
 - No grandiose stakes inflation. Scale claims to match actual stakes.
 - No invented concept labels ("the supervision paradox") unless you define them and they earn their keep.
 
+### Commit Messages & PR Descriptions
+Run the deslop skill on all PR descriptions and commit messages before posting them. These are visible to the whole team and should read like a human wrote them.
+
+PR descriptions should be short. A good PR has:
+- A summary that explains why the change exists, not a list of what files changed (the diff does that)
+- A problem section if the "why" isn't obvious from the summary
+- Links to related PRs or tickets if they exist
+
+Don't include:
+- "Files changed" or "Changes" sections that restate the diff
+- Testing sections that list commands for checks that CI runs automatically (linting, type-checking, unit tests)
+- Tables mapping files to descriptions of what changed in them
+
+If there's a non-obvious way to verify the change (like checking a specific Datadog query or hitting a specific URL), that's worth including. Routine CI checks are not.
+
 ## Sensitive & Org-Facing Work
 I sometimes work on documents that are politically sensitive internally — proposals, incident reviews, cross-org standards, and similar. When helping with these:
 - Treat the content with discretion
