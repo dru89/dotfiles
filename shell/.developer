@@ -18,6 +18,7 @@
 # Navigation:
 #   cdr [query]           Fuzzy-pick a repo under $DEVELOPER_DIR (frecency-ranked)
 #   cdw [query]           Fuzzy-pick a writing project under ~/Writing
+#   cdr --refresh         Rebuild the repo index cache (also cdw --refresh)
 #
 # Worktrees:
 #   convert-wt            Convert the current standard clone into a worktree container
@@ -138,6 +139,7 @@ clone() {
     target=$(command clone "$@") || return $?
     _cdfzf_record "$base_dir" "${target#$base_dir/}"
     cd "$target"
+    ( _cdfzf_build_index "$base_dir" >/dev/null 2>&1 & ) 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -152,6 +154,7 @@ convert-wt() {
     target=$(command convert-wt) || return $?
     _cdfzf_record "$base_dir" "${target#$base_dir/}"
     cd "$target"
+    ( _cdfzf_build_index "$base_dir" >/dev/null 2>&1 & ) 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -428,13 +431,29 @@ reorg() {
 # Frecency-ranked directory picker (cdr / cdw)
 # ---------------------------------------------------------------------------
 #
-# Maintains a history file at ~/.local/share/cdfzf/history with one
-# <epoch>\t<root>\t<relative-path> per visit. Repos are scored using
-# Firefox-style recency-decayed frecency: visits in the last 4 hours
-# count for 100 points, last day 70, last week 50, last month 30,
-# older visits 10. Repos with no history fall back to .git mtime.
+# Maintains two state files under ~/.local/share/cdfzf/:
+#   history          — <epoch>\t<root>\t<relpath> per visit (frecency scoring)
+#   index/<root>     — <mtime>\t<relpath> per repo (cached repo list per root)
+#
+# Repos are scored using Firefox-style recency-decayed frecency: visits in
+# the last 4 hours count for 100 points, last day 70, last week 50, last
+# month 30, older visits 10. Repos with no history fall back to .git mtime.
+#
+# The index is rebuilt synchronously on first use and asynchronously after
+# every successful cdr/cdw/clone/convert-wt. To force a rebuild (e.g., after
+# manual git clones outside the wrappers), use `cdr --refresh`.
 
 _CDFZF_HISTORY="${XDG_DATA_HOME:-$HOME/.local/share}/cdfzf/history"
+_CDFZF_INDEX_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/cdfzf/index"
+
+# Path to the cached index file for a given root directory.
+# Usage: _cdfzf_index_file <root>
+_cdfzf_index_file() {
+    local root="$1"
+    # Replace / with _ for a debuggable filename. Predictable per root.
+    local safe="${root//\//_}"
+    echo "$_CDFZF_INDEX_DIR/$safe"
+}
 
 # Record a visit to the frecency history file.
 # Usage: _cdfzf_record <root> <relative-path>
@@ -442,6 +461,78 @@ _cdfzf_record() {
     local root="$1" relpath="$2"
     mkdir -p "$(dirname "$_CDFZF_HISTORY")"
     printf '%s\t%s\t%s\n' "$(date +%s)" "$root" "$relpath" >> "$_CDFZF_HISTORY"
+}
+
+# Rebuild the repo index for a root directory.
+# Walks for .git directories (standard clones) and .bare directories (worktree
+# containers, expanded into their worktrees), and writes <mtime>\t<relpath>
+# per line to the cache file atomically (temp file + mv).
+# Usage: _cdfzf_build_index <root>
+_cdfzf_build_index() {
+    local root="$1"
+    [[ -d "$root" ]] || return 1
+    local cache_file
+    cache_file=$(_cdfzf_index_file "$root")
+    mkdir -p "$(dirname "$cache_file")" || return 1
+    local tmp="${cache_file}.tmp.$$"
+
+    {
+        # Pass 1: standard clones (.git directories)
+        find "$root" -maxdepth 6 \
+            \( -name "node_modules" -o \
+               -name ".venv" -o \
+               -name "venv" -o \
+               -name "__pycache__" -o \
+               -name ".tox" -o \
+               -name "vendor" -o \
+               -name "target" -o \
+               -name "build" -o \
+               -name "dist" -o \
+               -name ".next" -o \
+               -name ".cache" \) -type d -prune -o \
+            -name ".git" -type d -print -prune 2>/dev/null \
+            | while IFS= read -r gd; do
+            local repo_dir="${gd%/.git}"
+            local rel="${repo_dir#$root/}"
+            local mt
+            mt=$(stat -c %Y "$gd" 2>/dev/null || stat -f %m "$gd" 2>/dev/null || echo 0)
+            printf '%s\t%s\n' "$mt" "$rel"
+        done
+
+        # Pass 2: worktree containers (.bare directories) — expand into worktrees
+        find "$root" -maxdepth 6 \
+            \( -name "node_modules" -o \
+               -name ".venv" -o \
+               -name "venv" -o \
+               -name "__pycache__" -o \
+               -name ".tox" -o \
+               -name "vendor" -o \
+               -name "target" -o \
+               -name "build" -o \
+               -name "dist" -o \
+               -name ".next" -o \
+               -name ".cache" \) -type d -prune -o \
+            -name ".bare" -type d -print -prune 2>/dev/null \
+            | while IFS= read -r bd; do
+            local container_dir
+            container_dir=$(dirname "$bd")
+            git -C "$container_dir" worktree list --porcelain 2>/dev/null \
+                | while IFS= read -r line; do
+                [[ "$line" != worktree\ * ]] && continue
+                local wt_path="${line#worktree }"
+                [[ "$wt_path" == "$container_dir" ]] && continue
+                [[ -d "$wt_path" ]] || continue
+                local rel="${wt_path#$root/}"
+                local mt
+                mt=$(stat -c %Y "$wt_path/.git" 2>/dev/null || stat -f %m "$wt_path/.git" 2>/dev/null || echo 0)
+                printf '%s\t%s\n' "$mt" "$rel"
+            done
+        done
+    } > "$tmp"
+
+    # Atomic swap. If the walk produced nothing, still write an empty cache
+    # so we don't keep rebuilding synchronously on every call.
+    mv "$tmp" "$cache_file"
 }
 
 # Sort repo paths by frecency score, falling back to .git mtime.
@@ -477,8 +568,9 @@ _cdfzf_rank() {
 }
 
 # Jump to a repo or worktree under a given root directory using fzf.
-# Finds both standard clones (.git directories) and individual worktrees
-# (.git files pointing into a .bare/worktrees/ directory).
+# Reads the cached repo index, ranks by frecency, presents to fzf, then
+# refreshes the index in the background after a successful cd. On first
+# use (no cache yet) the index is built synchronously.
 #
 # Usage: _cdfzf <root> <prompt> [query]
 # If a query is given and matches exactly one entry, cd directly without fzf.
@@ -486,81 +578,20 @@ _cdfzf() {
     local root="$1"
     local prompt="${2:-Select repo: }"
     local query="$3"
+    local cache_file
+    cache_file=$(_cdfzf_index_file "$root")
 
-    # Collect working trees: standard clones + worktrees inside containers.
-    # We find .git as both directories (standard clones) and files (worktrees
-    # or container roots), then classify each one.
-    local entries=()   # paths relative to root
-    local mtimes=()    # corresponding mtime for each entry
+    # Cold start: build the index synchronously if no cache exists yet.
+    [[ -f "$cache_file" ]] || _cdfzf_build_index "$root"
+    [[ -f "$cache_file" ]] || return
 
-    # Pass 1: standard clones (.git directories)
-    local gitdirs
-    mapfile -t gitdirs < <(find "$root" -maxdepth 6 \
-        \( -name "node_modules" -o \
-           -name ".venv" -o \
-           -name "venv" -o \
-           -name "__pycache__" -o \
-           -name ".tox" -o \
-           -name "vendor" -o \
-           -name "target" -o \
-           -name "build" -o \
-           -name "dist" -o \
-           -name ".next" -o \
-           -name ".cache" \) -type d -prune -o \
-        -name ".git" -type d -print -prune 2>/dev/null)
-
-    for gd in "${gitdirs[@]}"; do
-        [[ -z "$gd" ]] && continue
-        local repo_dir="${gd%/.git}"
-        local rel="${repo_dir#$root/}"
-        entries+=("$rel")
-        local mt
-        mt=$(stat -c %Y "$gd" 2>/dev/null || stat -f %m "$gd" 2>/dev/null || echo 0)
-        mtimes+=("$mt")
-    done
-
-    # Pass 2: worktree containers (.bare directories) — list their worktrees.
-    local baredirs
-    mapfile -t baredirs < <(find "$root" -maxdepth 6 \
-        \( -name "node_modules" -o \
-           -name ".venv" -o \
-           -name "venv" -o \
-           -name "__pycache__" -o \
-           -name ".tox" -o \
-           -name "vendor" -o \
-           -name "target" -o \
-           -name "build" -o \
-           -name "dist" -o \
-           -name ".next" -o \
-           -name ".cache" \) -type d -prune -o \
-        -name ".bare" -type d -print -prune 2>/dev/null)
-
-    for bd in "${baredirs[@]}"; do
-        [[ -z "$bd" ]] && continue
-        local container_dir
-        container_dir=$(dirname "$bd")
-        # List worktrees using git porcelain format (stable across git versions).
-        # Only "worktree /path" lines are paths; HEAD/branch/gitdir/blank lines are skipped.
-        while IFS= read -r wt_line; do
-            [[ "$wt_line" != worktree\ * ]] && continue
-            local wt_path="${wt_line#worktree }"
-            [[ "$wt_path" == "$container_dir" ]] && continue
-            [[ -d "$wt_path" ]] || continue
-            local rel="${wt_path#$root/}"
-            entries+=("$rel")
-            local mt
-            mt=$(stat -c %Y "$wt_path/.git" 2>/dev/null || stat -f %m "$wt_path/.git" 2>/dev/null || echo 0)
-            mtimes+=("$mt")
-        done < <(git -C "$container_dir" worktree list --porcelain 2>/dev/null)
-    done
-
-    [[ ${#entries[@]} -eq 0 ]] && return
-
-    # Build mtime\tpath lines and rank them.
+    # Rank by frecency, then drop entries that no longer exist on disk
+    # (e.g., after `reorg --apply` or a manual rm). The background refresh
+    # below rewrites the cache, so these dead entries are transient.
     local repos
-    repos=$(for i in "${!entries[@]}"; do
-        printf '%s\t%s\n' "${mtimes[$i]}" "${entries[$i]}"
-    done | _cdfzf_rank "$root")
+    repos=$(_cdfzf_rank "$root" < "$cache_file" \
+        | while IFS= read -r p; do [[ -d "$root/$p" ]] && echo "$p"; done)
+    [[ -z "$repos" ]] && return
 
     # If a query was provided, check for a single exact (substring) match
     # before launching fzf. Fuzzy matching is only used interactively.
@@ -573,6 +604,7 @@ _cdfzf() {
             echo "$matches"
             _cdfzf_record "$root" "$matches"
             cd "$root/$matches"
+            ( _cdfzf_build_index "$root" >/dev/null 2>&1 & ) 2>/dev/null
             return
         fi
     fi
@@ -584,8 +616,30 @@ _cdfzf() {
     if [[ -n "$repo_dir" ]]; then
         _cdfzf_record "$root" "$repo_dir"
         cd "$root/$repo_dir"
+        ( _cdfzf_build_index "$root" >/dev/null 2>&1 & ) 2>/dev/null
     fi
 }
 
-function cdw() { _cdfzf ~/Writing "Writing: " "$1"; }
-function cdr() { _cdfzf "${DEVELOPER_DIR:-$HOME/Developer}" "Repo: " "$1"; }
+function cdw() {
+    local root="$HOME/Writing"
+    if [[ "$1" == "--refresh" ]]; then
+        _cdfzf_build_index "$root"
+        local n
+        n=$(wc -l < "$(_cdfzf_index_file "$root")" 2>/dev/null | tr -d ' ')
+        echo "Indexed ${n:-0} projects under $root."
+        return
+    fi
+    _cdfzf "$root" "Writing: " "$1"
+}
+
+function cdr() {
+    local root="${DEVELOPER_DIR:-$HOME/Developer}"
+    if [[ "$1" == "--refresh" ]]; then
+        _cdfzf_build_index "$root"
+        local n
+        n=$(wc -l < "$(_cdfzf_index_file "$root")" 2>/dev/null | tr -d ' ')
+        echo "Indexed ${n:-0} repos under $root."
+        return
+    fi
+    _cdfzf "$root" "Repo: " "$1"
+}
