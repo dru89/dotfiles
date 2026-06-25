@@ -228,7 +228,7 @@ reorg() {
            -name "__pycache__" -o -name ".tox" -o -name "vendor" -o \
            -name "target" -o -name "build" -o -name "dist" -o \
            -name ".next" -o -name ".cache" \) -type d -prune -o \
-        -name ".git" -type d -exec dirname {} \; -prune 2>/dev/null | sort)
+        -name ".git" -type d -print -prune 2>/dev/null | sort)
 
     gum style --bold "Found ${#repos[@]} repos under $base_dir"
     echo ""
