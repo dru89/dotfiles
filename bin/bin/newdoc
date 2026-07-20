@@ -4,21 +4,23 @@ set -euo pipefail
 WRITING_DIR="$HOME/Writing"
 
 usage() {
-  echo "Usage: newdoc <project-name>"
+  echo "Usage: newdoc [--area <area>] <project-name>"
   echo ""
   echo "Creates a new writing project:"
-  echo "  - ~/Writing/<project-name>/"
-  echo "  - ~/Writing/<project-name>/reference/"
+  echo "  - ~/Writing/<project-name>/            workspace (local git, no remote)"
+  echo "  - ~/Writing/<project-name>/CLAUDE.md   purpose, audience, document manifest, edit flow"
+  echo "  - ~/Writing/<project-name>/reference/  source material (gitignored)"
   echo "  - ~/Writing/<project-name>/<project-name>.md  (empty draft)"
-  echo "  - ~/Writing/<project-name>/.siftrc.json       (links to Obsidian project)"
-  echo "  - Local git repo with .gitignore (no remote)"
-  echo "  - Obsidian project (created if it doesn't exist)"
+  echo "  - Obsidian project (registry entry with workdir: frontmatter; activity"
+  echo "    is derived from this folder's git log — no manual tracker updates)"
   exit 1
 }
 
-if [[ $# -eq 0 ]]; then
-  usage
+AREA=""
+if [[ "${1:-}" == "--area" ]]; then
+  AREA="$2"; shift 2
 fi
+[[ $# -eq 0 ]] && usage
 
 NAME="$*"
 PROJECT_DIR="$WRITING_DIR/$NAME"
@@ -28,45 +30,63 @@ if [[ -d "$PROJECT_DIR" ]]; then
   exit 1
 fi
 
-# Create directory structure
 mkdir -p "$PROJECT_DIR/reference"
-
-# Create empty draft
 touch "$PROJECT_DIR/$NAME.md"
 
-# Create sift project if it doesn't already exist
+cat > "$PROJECT_DIR/CLAUDE.md" <<EOF
+# $NAME
+
+## Purpose
+
+(TK: What is this writing trying to achieve? If this is still a TK, the agent's first job in any session is to ask and fill it in.)
+
+## Audience
+
+(TK: Who reads this, and what should they do after reading it?)
+
+## Documents
+
+| File | Purpose | Destination |
+|------|---------|-------------|
+| $NAME.md | Main draft | (TK: single Google Doc / multi-tab doc / multiple docs by audience) |
+
+One row per document. If a draft publishes as a multi-tab Google Doc, describe the tab structure here.
+
+## Edit flow
+
+- Rounds run in Margin (https://github.com/dru89/margin): anchored comments and suggestions, accepted or rejected one by one; every round auto-commits to this repo. Outside Margin, leave (TK: ...) markers as the inline ask channel.
+- reference/ holds source material (gitignored) — read it before drafting.
+- Publish with gpush when a draft is ready for Google Docs; run deslop on each changed section first.
+- The Obsidian project "$NAME" is a registry entry only (purpose, status, links). Activity is read from this repo's git log — do not update the vault tracker during normal writing.
+EOF
+
 if sift project path -- "$NAME" > /dev/null 2>&1; then
   echo "Sift project \"$NAME\" already exists."
 else
-  sift project create -- "$NAME"
+  sift project create --frontmatter "{\"workdir\": \"~/Writing/$NAME\"}" ${AREA:+--area "$AREA"} -- "$NAME"
   sift project set --status active -- "$NAME"
-  sift note --project "$NAME" --heading "## Overview" "Writing project: \`~/Writing/$NAME/\`"
+  sift note --project "$NAME" --heading "## Overview" "Writing project. Workspace: \`~/Writing/$NAME/\` — purpose and document manifest live in its CLAUDE.md; activity is derived from its git history."
 fi
 
-# Write .siftrc.json
 cat > "$PROJECT_DIR/.siftrc.json" <<EOF
 {
   "project": "$NAME"
 }
 EOF
 
-# Write .gitignore — skip reference docs (binary PDFs, docx, etc.)
 cat > "$PROJECT_DIR/.gitignore" <<EOF
 reference/
 EOF
 
-# Initialize local-only git repo and make initial commit
 git -C "$PROJECT_DIR" init -q
 git -C "$PROJECT_DIR" add -A
 git -C "$PROJECT_DIR" commit -q -m "Initial project setup"
 
-# Record in cdfzf frecency history so cdw ranks it immediately
 _CDFZF_HISTORY="${XDG_DATA_HOME:-$HOME/.local/share}/cdfzf/history"
 mkdir -p "$(dirname "$_CDFZF_HISTORY")"
 printf '%s\t%s\t%s\n' "$(date +%s)" "$WRITING_DIR" "$NAME" >> "$_CDFZF_HISTORY"
 
 echo "Created writing project: $PROJECT_DIR"
 echo "  Draft:     $PROJECT_DIR/$NAME.md"
-echo "  Reference: $PROJECT_DIR/reference/"
-echo "  Git:       local repo initialized"
-echo "  Sift:      linked to project \"$NAME\""
+echo "  CLAUDE.md: fill in Purpose/Audience/Documents in your first session"
+echo "  Sift:      registry project \"$NAME\"${AREA:+ (area: $AREA)}"
